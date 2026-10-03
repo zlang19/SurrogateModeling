@@ -1,0 +1,8 @@
+# Step 1 vertical slice: Sobol-GP baseline on Borehole at the full v1 budget.
+name = "step1"
+budget = 100
+batch_size = 5
+seeds = 10
+workers = 10
+problems = ["borehole"]
+methods = ["sobol_gp"]

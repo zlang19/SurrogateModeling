@@ -1,0 +1,8 @@
+# Step 3: Sobol-GP baseline on the toy MC neutronics problem.
+name = "step3"
+budget = 100
+batch_size = 5
+seeds = 10
+workers = 10
+problems = ["toymc"]
+methods = ["sobol_gp"]

@@ -1,0 +1,8 @@
+# Step 2: Sobol-GP baseline across the full analytic suite.
+name = "step2"
+budget = 100
+batch_size = 5
+seeds = 10
+workers = 10
+problems = ["borehole", "otl", "wing_weight", "morris", "borehole_d30", "wing_weight_d40"]
+methods = ["sobol_gp"]

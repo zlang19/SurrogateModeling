@@ -1,0 +1,31 @@
+[project]
+name = "surrogatemodeling"
+version = "0.1.0"
+description = "Test bed for surrogate modeling methods against noisy, multi-fidelity simulators"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "botorch>=0.18.1",
+    "gpytorch>=1.15.2",
+    "matplotlib>=3.11.2",
+    "numpy>=2.5.3",
+    "pandas>=3.0.6",
+    "pyarrow>=25.0.1",
+    "scipy>=1.18.1",
+    "torch>=2.14.1",
+]
+
+[project.scripts]
+sm = "surrogatemodeling.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.10,<0.11"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]

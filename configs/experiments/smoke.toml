@@ -1,0 +1,8 @@
+# Whole pipeline in well under a minute: 2 problems x (up to) 2 methods x 2 seeds.
+name = "smoke"
+budget = 10
+batch_size = 5
+seeds = 2
+workers = 2
+problems = ["borehole", "otl"]
+methods = ["sobol_gp"]
