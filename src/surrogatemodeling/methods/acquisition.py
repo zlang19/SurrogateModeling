@@ -57,6 +57,7 @@ def greedy_batch(
     score: str = "iv",
     cost_aware: bool = False,
     target_tau2: np.ndarray | None = None,
+    scores_out: list[float] | None = None,
 ) -> list[tuple[int, int]]:
     """Choose up to k (candidate, fidelity-option) pairs.
 
@@ -64,6 +65,7 @@ def greedy_batch(
     tau2:  (m, F, C) observation noise variance per output, fidelity option and candidate
     costs: (F,) cost of each fidelity option
     target_tau2: (m,) noise on EPIG's targets y*; ignored by "iv"
+    scores_out: if given, the winning score of each pick is appended to it
     """
     fn = SCORES[score]
     K = [c.copy() for c in covs]
@@ -78,6 +80,8 @@ def greedy_batch(
             total = total / costs[:, None]
         total[~affordable] = -np.inf
         f, c = np.unravel_index(np.argmax(total), total.shape)
+        if scores_out is not None:
+            scores_out.append(float(total[f, c]))
         for o in range(len(K)):
             K[o] = rank_one_update(K[o], n_ref + c, tau2[o, f, c])
         chosen.append((int(c), int(f)))

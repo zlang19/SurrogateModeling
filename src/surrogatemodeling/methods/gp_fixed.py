@@ -72,3 +72,6 @@ class SobolGP(FixedDesignMethod):
             self.stale = False
         mean, var = self.gp.predict(self.spec.dist.to_unit(X))
         return Prediction(mean=mean, var=var)
+
+    def diagnostics(self) -> dict:
+        return self.gp.diagnostics(self.spec.dist.names, self.spec.output_names)

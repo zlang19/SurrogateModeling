@@ -107,3 +107,14 @@ class SobolPCE(FixedDesignMethod):
             self.stale = False
         Z = self._z(X)
         return Prediction(mean=np.column_stack([m.predict(Z) * s + l for m, s, l in zip(self.models, self.scale, self.loc)]))
+
+    def diagnostics(self) -> dict:
+        names = self.spec.dist.names
+        return {
+            out: {
+                "degree": m.p,
+                "n_terms": len(m.terms),
+                "inputs_used": sorted({names[i] for term in m.terms for i, _ in term}),
+            }
+            for out, m in zip(self.spec.output_names, self.models)
+        }

@@ -8,6 +8,8 @@ per output, fixed per-point noise from the reported sigma.
 
 from __future__ import annotations
 
+import time
+
 import jax
 import numpy as np
 import torch
@@ -42,6 +44,7 @@ class SobolSAAS(FixedDesignMethod):
         sd = y.std(axis=0, ddof=1) if len(y) > 1 else np.ones(y.shape[1])
         self.loc, self.scale = y.mean(axis=0), np.where(sd > 0, sd, 1.0)
         X = torch.as_tensor(self.spec.dist.to_unit(self.data.X), dtype=torch.float64)
+        t0 = time.perf_counter()
         self.models = []
         for j in range(y.shape[1]):
             yj = torch.as_tensor((y[:, j : j + 1] - self.loc[j]) / self.scale[j], dtype=torch.float64)
@@ -55,7 +58,18 @@ class SobolSAAS(FixedDesignMethod):
         # Each fit has a new data size, so JAX compiles a new NUTS kernel; without this the
         # compiled kernels accumulate to several GB per run. (Outputs share one compile.)
         jax.clear_caches()
+        self.nuts_time = time.perf_counter() - t0
 
     def setup(self, spec, budget, rng) -> None:
         super().setup(spec, budget, rng)
         self.seed = rng.integers(2**31)
+
+    def diagnostics(self) -> dict:
+        names = self.spec.dist.names
+        return {
+            "nuts_time": self.nuts_time,
+            "median_inverse_lengthscales": {
+                out: dict(zip(names, map(float, 1.0 / m.median_lengthscale.detach().reshape(-1).numpy()), strict=True))
+                for out, m in zip(self.spec.output_names, self.models)
+            },
+        }

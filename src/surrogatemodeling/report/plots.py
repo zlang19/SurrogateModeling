@@ -24,14 +24,20 @@ def method_color(method: str) -> str:
     return PALETTE[names.index(method) % len(PALETTE)] if method in names else MUTED
 
 
-def curves_on_grid(df: pd.DataFrame, metric: str, grid: np.ndarray) -> np.ndarray:
-    """(n_seeds, len(grid)) step-interpolated metric: value at cost c is the latest row with cost <= c."""
+def curves_on_grid(df: pd.DataFrame, metric: str, grid: np.ndarray, x: str = "cost", extend: bool = True) -> np.ndarray:
+    """(n_seeds, len(grid)) step-interpolated metric: value at x=c is the latest row with x <= c.
+
+    With extend=False, grid points past a seed's last row are NaN (for runs still in progress).
+    """
     out = []
     for _, run in df.groupby("seed"):
-        run = run.sort_values("cost")
-        idx = np.searchsorted(run["cost"].to_numpy(), grid, side="right") - 1
-        vals = run[metric].to_numpy()[np.clip(idx, 0, None)]
-        out.append(np.where(idx >= 0, vals, np.nan))
+        run = run.sort_values(x)
+        xs = run[x].to_numpy()
+        idx = np.searchsorted(xs, grid, side="right") - 1
+        vals = np.where(idx >= 0, run[metric].to_numpy()[np.clip(idx, 0, None)], np.nan)
+        if not extend:
+            vals = np.where(grid > xs[-1] * (1 + 1e-9), np.nan, vals)
+        out.append(vals)
     return np.array(out)
 
 

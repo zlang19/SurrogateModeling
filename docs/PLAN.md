@@ -74,6 +74,7 @@ Build a test bed for surrogate modeling methods against complex simulation probl
 | 4b | GP + EPIG acquisition (targets sampled from input dist) | Hybrid |
 | 5 | #4 with cost-aware (x, fidelity) selection | Hybrid |
 | 6 | Screening (Morris or early ARD) → GP on active inputs | Hybrid |
+| 5b | #5 + learned extra noise on top of reported σ | Hybrid |
 
 - Excluded from v1: neural nets, ensembles, RBF/kriging duplicates.
 - As built:
@@ -91,6 +92,8 @@ Build a test bed for surrogate modeling methods against complex simulation probl
     - Then: ARD screening keeps inputs up to 99% of relevance (max 12), and re-screens when the data doubles.
     - Noise: a learned extra noise term absorbs the dropped inputs and is added to the predictive variance.
 - Optional later: SAAS + cost-aware acquisition, co-kriging as a naive multi-fidelity baseline.
+- #5b was added after the first full run. #5 plateaued at 0.27 NRMSE on the toy MC power ratio, whose batch σ is about 2× under-reported: with about 1000 low-fidelity points it fit the noise. Learning extra noise fixed it (0.10 on 3 seeds) at no cost elsewhere. Lesson for MCNP: cost-aware sampling is only as good as the tally σ, so don't take σ at face value.
+- Open: #5/#5b always pick the lowest fidelity on the ladder (1/16). Follow-up (b) tests whether that holds with a realistic MCNP per-run overhead and a finer ladder.
 
 ## Interface (frozen)
 ```python
@@ -152,8 +155,9 @@ numpy, scipy, torch, gpytorch, botorch, scikit-learn, SALib, pandas, pyarrow, ma
 5. Ranking and report, then the full run (7 methods × ~6 problems × 10 seeds ≈ 420 runs).
 
 ## Future Notes
-* Documentation of the problems and modeling methods
-* EPIG is in v1 as method #4b
-* HIPE with EPIG: HIPE replaces the Sobol seed phase of the hybrids (#4c); evaluate once the baselines work
-* Actual OpenMC reactor models and cross sections and uncertainties
 * Live dashboard
+* Documentation of the problems and modeling methods
+* Actual OpenMC reactor models and cross sections and uncertainties
+* HIPE with EPIG: HIPE replaces the Sobol seed phase of the hybrids (#4c); evaluate once the baselines work
+* Other modern cost-aware functions
+* Fix issue with always picking the lowest fidelity

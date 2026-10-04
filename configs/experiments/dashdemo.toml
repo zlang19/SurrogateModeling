@@ -1,0 +1,8 @@
+# Small live experiment for checking the dashboard by eye (no SAAS).
+name = "dashdemo"
+budget = 40
+batch_size = 5
+seeds = 3
+workers = 6
+problems = ["borehole", "otl", "toymc"]
+methods = ["sobol_gp", "adaptive_iv", "adaptive_iv_mf_xn", "sobol_pce"]

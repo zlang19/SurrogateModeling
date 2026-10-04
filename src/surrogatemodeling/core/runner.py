@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import time
 
 import numpy as np
 import pandas as pd
 
+from surrogatemodeling.core.live import RunLog
 from surrogatemodeling.core.metrics import all_metrics
 from surrogatemodeling.core.protocols import Method, Problem
 
@@ -28,9 +30,21 @@ def noise_rng(seed: int, batch: int) -> np.random.Generator:
     return np.random.default_rng([seed, _NOISE_STREAM, batch])
 
 
-def run(problem: Problem, method: Method, seed: int, budget: float, batch_size: int = 5) -> pd.DataFrame:
-    """Run until the budget is spent or the method stops asking. One row per batch."""
+def _diagnostics(method: Method) -> str | None:
+    """JSON of the method's optional diagnostics() for the batch just finished."""
+    fn = getattr(method, "diagnostics", None)
+    return json.dumps(fn(), default=float) if fn is not None else None
+
+
+def run(
+    problem: Problem, method: Method, seed: int, budget: float, batch_size: int = 5, log: RunLog | None = None
+) -> pd.DataFrame:
+    """Run until the budget is spent or the method stops asking. One row per batch.
+
+    With `log`, each row is also appended to the run's live log as it is produced.
+    """
     spec = problem.spec
+    start = time.perf_counter()
     X_test, Y_test = problem.test_set()
     method.setup(spec, budget, method_rng(seed))
 
@@ -51,7 +65,9 @@ def run(problem: Problem, method: Method, seed: int, budget: float, batch_size: 
         if cost > budget - spent + _COST_TOL:
             raise BudgetExceededError(f"batch {batch} costs {cost:.6g} but only {budget - spent:.6g} remains")
 
+        t0 = time.perf_counter()
         obs = problem.evaluate(X, fid, noise_rng(seed, batch))
+        sim_time = time.perf_counter() - t0
         method.tell(X, fid, obs.y, obs.sigma)
         spent += cost
         n_evals += len(X)
@@ -60,15 +76,19 @@ def run(problem: Problem, method: Method, seed: int, budget: float, batch_size: 
         pred = method.predict(X_test)
         predict_time = time.perf_counter() - t0
 
-        rows.append(
-            {
-                "batch": batch,
-                "n_evals": n_evals,
-                "cost": spent,
-                "ask_time": ask_time,
-                "predict_time": predict_time,
-                **all_metrics(pred, Y_test, spec.output_names),
-            }
-        )
+        row = {
+            "batch": batch,
+            "n_evals": n_evals,
+            "cost": spent,
+            "elapsed": time.perf_counter() - start,
+            "ask_time": ask_time,
+            "sim_time": sim_time,
+            "predict_time": predict_time,
+            **all_metrics(pred, Y_test, spec.output_names),
+            "diagnostics": _diagnostics(method),
+        }
+        rows.append(row)
+        if log is not None:
+            log.batch(row)
         batch += 1
     return pd.DataFrame(rows)

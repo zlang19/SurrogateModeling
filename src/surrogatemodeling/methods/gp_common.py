@@ -10,6 +10,8 @@ last full fit; in between, the previous hyperparameters are reused on the new da
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 import torch
 from botorch.fit import fit_gpytorch_mll
@@ -41,11 +43,13 @@ class IndependentGPs:
         self.active: np.ndarray | None = None  # input columns the GPs see; None = all
         self._n_at_full_fit = 0
         self._hypers: list[dict[str, dict]] = []
+        self.last_fit = {"reoptimized": False, "fit_time": 0.0}
 
     def fit(self, Xu: np.ndarray, Y: np.ndarray, Var: np.ndarray, active: np.ndarray | None = None) -> None:
         if active is not None and (self.active is None or not np.array_equal(active, self.active)):
             self._hypers = []  # a different input set invalidates saved lengthscales
         self.active = active
+        t0 = time.perf_counter()
         full_fit = not self._hypers or len(Xu) >= self.refit_growth * self._n_at_full_fit
         sd = Y.std(axis=0, ddof=1) if len(Y) > 1 else np.ones(Y.shape[1])
         self.loc, self.scale = Y.mean(axis=0), np.where(sd > 0, sd, 1.0)
@@ -69,6 +73,7 @@ class IndependentGPs:
         if full_fit:
             self._n_at_full_fit = len(Xu)
             self._hypers = [{k: m.state_dict() for k, m in _hyper_modules(model).items()} for model in self.models]
+        self.last_fit = {"reoptimized": full_fit, "fit_time": time.perf_counter() - t0}
 
     def _cols(self, Xu: np.ndarray) -> np.ndarray:
         return Xu if self.active is None else Xu[:, self.active]
@@ -106,3 +111,19 @@ class IndependentGPs:
         return np.array(
             [float(m.likelihood.second_noise_covar.noise.detach().reshape(-1)[0]) * s**2 for m, s in zip(self.models, self.scale)]
         )
+
+    def diagnostics(self, input_names: list[str], output_names: list[str]) -> dict:
+        """Last fit's timing, whether hyperparameters were re-optimized, and ARD lengthscales
+        (unit-box units) per output; plus the learned extra noise sd when enabled."""
+        if not self.models:
+            return {}
+        names = list(np.asarray(input_names)[self.active]) if self.active is not None else list(input_names)
+        ls = 1.0 / np.sqrt(self.inverse_lengthscales_sq())
+        out = {
+            **self.last_fit,
+            "lengthscales": {o: dict(zip(names, map(float, row), strict=True)) for o, row in zip(output_names, ls)},
+        }
+        extra = self.extra_noise_var()
+        if extra is not None:
+            out["extra_noise_sd"] = dict(zip(output_names, map(float, np.sqrt(extra)), strict=True))
+        return out

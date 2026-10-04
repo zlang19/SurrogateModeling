@@ -38,6 +38,7 @@ class AdaptiveGP:
         self.data = Dataset(spec)
         self.gp = IndependentGPs(extra_noise=self.extra_noise)
         self.stale = True
+        self.last_batch: dict = {}
 
     # --- protocol ------------------------------------------------------------------------
 
@@ -45,18 +46,30 @@ class AdaptiveGP:
         if len(self.queue):
             k = min(n, len(self.queue), int(np.floor(budget_remaining / self.unit_cost + 1e-9)))
             X, self.queue = self.queue[:k], self.queue[k:]
+            self.last_batch = {"phase": "seed", "fidelities": [1.0] * k}
             return X, np.ones(k)
         self._refresh()
         cand = self._candidates()
         U = self.spec.dist.to_unit(np.vstack([self.ref, cand]))
         tau2 = self._noise_options(len(cand))
         hf = int(np.argmax(self.fidelities))
+        scores: list[float] = []
         chosen = greedy_batch(
             self.gp.joint_cov(U), N_REF, tau2, self.costs, n, budget_remaining,
-            score=self.score, cost_aware=self.cost_aware, target_tau2=tau2[:, hf, 0],
+            score=self.score, cost_aware=self.cost_aware, target_tau2=tau2[:, hf, 0], scores_out=scores,
         )
         idx = [c for c, _ in chosen]
-        return cand[idx].reshape(-1, self.spec.dim), self.fidelities[[f for _, f in chosen]]
+        fids = self.fidelities[[f for _, f in chosen]]
+        self.last_batch = {
+            "phase": "adaptive",
+            "fidelities": [float(f) for f in fids],
+            "best_score": scores[0] if scores else None,
+            "hf_noise_sd": dict(zip(self.spec.output_names, map(float, np.sqrt(self._hf_var)), strict=True)),
+        }
+        return cand[idx].reshape(-1, self.spec.dim), fids
+
+    def diagnostics(self) -> dict:
+        return {**self.gp.diagnostics(self.spec.dist.names, self.spec.output_names), "batch": self.last_batch}
 
     def tell(self, X, fidelity, y, sigma) -> None:
         self.data.add(X, fidelity, y, sigma)
@@ -92,6 +105,7 @@ class AdaptiveGP:
         estimated as the median of var * fidelity over the data seen so far.
         """
         hf_var = np.median(self.data.var * self.data.fidelity[:, None], axis=0)
+        self._hf_var = hf_var
         extra = self.gp.extra_noise_var()
         tau2 = hf_var[:, None] / self.fidelities[None, :]  # (m, F)
         if extra is not None:
@@ -138,6 +152,11 @@ class ScreenedGP(AdaptiveGP):
         n_keep = int(np.searchsorted(np.cumsum(share[order]) / share.sum(), self.COVERAGE) + 1)
         n_keep = int(np.clip(n_keep, min(2, U.shape[1]), self.MAX_ACTIVE))
         return np.sort(order[:n_keep])
+
+    def diagnostics(self) -> dict:
+        names = self.spec.dist.names
+        active = [names[i] for i in self.active] if self.active is not None else list(names)
+        return {**super().diagnostics(), "active_inputs": active}
 
     def predict(self, X: np.ndarray) -> Prediction:
         # The extra-noise term mostly stands in for the screened-out inputs, which are part

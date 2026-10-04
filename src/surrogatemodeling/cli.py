@@ -1,4 +1,4 @@
-"""`sm run <config.toml>` and `sm report <results_dir>`."""
+"""`sm run <config.toml>`, `sm report <results_dir>` and `sm dashboard`."""
 
 from __future__ import annotations
 
@@ -20,20 +20,29 @@ def _single_threaded() -> None:
     torch.set_num_threads(1)
 
 
-def _run_one(problem: str, method: str, seed: int, budget: float, batch_size: int, out: Path) -> Path:
+def _run_one(
+    problem: str, method: str, seed: int, budget: float, batch_size: int, out: Path, invocation: str | None = None
+) -> Path:
     _single_threaded()
 
+    from surrogatemodeling.core.live import RunLog, run_id
     from surrogatemodeling.core.runner import run
     from surrogatemodeling.registry import METHODS, PROBLEMS
 
-    df = run(PROBLEMS[problem](), METHODS[method](), seed, budget, batch_size)
-    df.insert(0, "seed", seed)
-    df.insert(0, "method", method)
-    df.insert(0, "problem", problem)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_suffix(".tmp")
-    df.to_parquet(tmp)
-    tmp.rename(out)
+    log = RunLog(out.parent.parent / "live", run_id(problem, method, seed), budget, invocation)
+    try:
+        df = run(PROBLEMS[problem](), METHODS[method](), seed, budget, batch_size, log=log)
+        df.insert(0, "seed", seed)
+        df.insert(0, "method", method)
+        df.insert(0, "problem", problem)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        tmp = out.with_suffix(".tmp")
+        df.to_parquet(tmp)
+        tmp.rename(out)
+    except BaseException as e:
+        log.finish("failed", repr(e))
+        raise
+    log.finish("done")
     return out
 
 
@@ -61,6 +70,10 @@ def cmd_run(config_path: Path, results_root: Path, force: bool) -> None:
     print(f"{len(jobs)} runs to do ({cfg['name']})", flush=True)
 
     workers = int(cfg.get("workers", os.cpu_count() or 1))
+    from surrogatemodeling.core.live import write_manifest
+
+    manifest = write_manifest(out_dir / "live", config_path, cfg, [j[:3] for j in jobs], workers)
+    jobs = [(*job, manifest.stem) for job in jobs]
     # Optional per-method concurrency caps, e.g. limits = { sobol_saas = 3 } for memory-heavy
     # methods. Capped methods get their own pools; everything else shares the remainder.
     limits = {m: int(n) for m, n in cfg.get("limits", {}).items() if any(j[1] == m for j in jobs)}
@@ -96,6 +109,19 @@ def cmd_report(results_dir: Path) -> None:
         print(f"wrote {path}")
 
 
+def cmd_dashboard(results: Path, host: str, port: int) -> None:
+    from surrogatemodeling.dashboard.server import serve
+
+    server = serve(results, host, port)
+    print(f"dashboard on http://{host}:{port}  (results: {results.resolve()})  Ctrl-C to stop", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="sm", description="Surrogate modeling test bed")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -105,10 +131,16 @@ def main() -> None:
     p_run.add_argument("--force", action="store_true", help="re-run runs whose output already exists")
     p_rep = sub.add_parser("report", help="plot results of an experiment")
     p_rep.add_argument("results_dir", type=Path)
+    p_dash = sub.add_parser("dashboard", help="live read-only dashboard of experiments under --results")
+    p_dash.add_argument("--results", type=Path, default=Path("results"))
+    p_dash.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to allow other devices on the LAN")
+    p_dash.add_argument("--port", type=int, default=8050)
     args = parser.parse_args()
 
     if args.cmd == "run":
         cmd_run(args.config, args.results, args.force)
+    elif args.cmd == "dashboard":
+        cmd_dashboard(args.results, args.host, args.port)
     else:
         cmd_report(args.results_dir)
 

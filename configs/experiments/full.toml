@@ -5,7 +5,7 @@ batch_size = 5
 seeds = 10
 workers = 10
 problems = ["borehole", "otl", "wing_weight", "morris", "borehole_d30", "wing_weight_d40", "toymc"]
-methods = ["sobol_gp", "sobol_pce", "sobol_saas", "adaptive_iv", "adaptive_epig", "adaptive_iv_mf", "screen_gp"]
+methods = ["sobol_gp", "sobol_pce", "sobol_saas", "adaptive_iv", "adaptive_epig", "adaptive_iv_mf", "screen_gp", "adaptive_iv_mf_xn"]
 
 # SAAS (JAX NUTS) peaks near 3 GB per run vs <1.6 GB for the rest; cap it so 10 workers fit in ~20 GB.
 [limits]
