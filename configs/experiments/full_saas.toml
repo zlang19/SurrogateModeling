@@ -1,0 +1,8 @@
+# Part 2 of `full`: SAAS only (~20 min/run, ~3 GB peak each). 6 workers stay under the 22 GB cap.
+name = "full"
+budget = 100
+batch_size = 5
+seeds = 10
+workers = 6
+problems = ["borehole", "otl", "wing_weight", "morris", "borehole_d30", "wing_weight_d40", "toymc"]
+methods = ["sobol_saas"]

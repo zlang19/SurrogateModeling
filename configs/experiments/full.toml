@@ -1,0 +1,12 @@
+# Step 5: every v1 method on every problem.
+name = "full"
+budget = 100
+batch_size = 5
+seeds = 10
+workers = 10
+problems = ["borehole", "otl", "wing_weight", "morris", "borehole_d30", "wing_weight_d40", "toymc"]
+methods = ["sobol_gp", "sobol_pce", "sobol_saas", "adaptive_iv", "adaptive_epig", "adaptive_iv_mf", "screen_gp"]
+
+# SAAS (JAX NUTS) peaks near 3 GB per run vs <1.6 GB for the rest; cap it so 10 workers fit in ~20 GB.
+[limits]
+sobol_saas = 3

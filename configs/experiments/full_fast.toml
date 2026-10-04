@@ -1,0 +1,8 @@
+# Part 1 of `full`: every method except SAAS. Writes into results/full alongside part 2.
+name = "full"
+budget = 100
+batch_size = 5
+seeds = 10
+workers = 10
+problems = ["borehole", "otl", "wing_weight", "morris", "borehole_d30", "wing_weight_d40", "toymc"]
+methods = ["sobol_gp", "sobol_pce", "adaptive_iv", "adaptive_epig", "adaptive_iv_mf", "screen_gp"]

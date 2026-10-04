@@ -1,0 +1,8 @@
+# Follow-up (a) trial: cost-aware IV with learned extra noise, on the problems where #5 matters most.
+name = "full"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 9
+problems = ["toymc", "borehole_d30", "morris"]
+methods = ["adaptive_iv_mf_xn"]

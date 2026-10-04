@@ -11,10 +11,17 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 
-def _run_one(problem: str, method: str, seed: int, budget: float, batch_size: int, out: Path) -> Path:
+def _single_threaded() -> None:
+    """One process per core: keep torch and JAX from spawning their own thread pools."""
+    os.environ.setdefault("JAX_PLATFORMS", "cpu")
+    os.environ.setdefault("XLA_FLAGS", "--xla_cpu_multi_thread_eigen=false intra_op_parallelism_threads=1")
     import torch
 
-    torch.set_num_threads(1)  # one process per core; avoid oversubscription
+    torch.set_num_threads(1)
+
+
+def _run_one(problem: str, method: str, seed: int, budget: float, batch_size: int, out: Path) -> Path:
+    _single_threaded()
 
     from surrogatemodeling.core.runner import run
     from surrogatemodeling.registry import METHODS, PROBLEMS
@@ -51,21 +58,33 @@ def cmd_run(config_path: Path, results_root: Path, force: bool) -> None:
         if out.exists() and not force:
             continue
         jobs.append((problem, method, seed, float(cfg["budget"]), int(cfg.get("batch_size", 5)), out))
-    print(f"{len(jobs)} runs to do ({cfg['name']})")
+    print(f"{len(jobs)} runs to do ({cfg['name']})", flush=True)
 
     workers = int(cfg.get("workers", os.cpu_count() or 1))
+    # Optional per-method concurrency caps, e.g. limits = { sobol_saas = 3 } for memory-heavy
+    # methods. Capped methods get their own pools; everything else shares the remainder.
+    limits = {m: int(n) for m, n in cfg.get("limits", {}).items() if any(j[1] == m for j in jobs)}
+    pools = {m: n for m, n in limits.items()}
+    pools[None] = max(1, workers - sum(limits.values()))
     failures = 0
-    # spawn, not fork: torch autograd state does not survive fork.
-    with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn")) as pool:
-        futures = {pool.submit(_run_one, *job): job for job in jobs}
+    ctx = multiprocessing.get_context("spawn")  # spawn, not fork: torch autograd state does not survive fork
+    executors = {key: ProcessPoolExecutor(max_workers=n, mp_context=ctx) for key, n in pools.items()}
+    try:
+        futures = {}
+        for job in jobs:
+            pool = executors[job[1] if job[1] in limits else None]
+            futures[pool.submit(_run_one, *job)] = job
         for i, fut in enumerate(as_completed(futures), 1):
             problem, method, seed = futures[fut][:3]
             try:
                 fut.result()
-                print(f"[{i}/{len(jobs)}] done {problem} / {method} / seed {seed}")
+                print(f"[{i}/{len(jobs)}] done {problem} / {method} / seed {seed}", flush=True)
             except Exception as e:  # report and keep going; the run can be retried later
                 failures += 1
-                print(f"[{i}/{len(jobs)}] FAILED {problem} / {method} / seed {seed}: {e!r}")
+                print(f"[{i}/{len(jobs)}] FAILED {problem} / {method} / seed {seed}: {e!r}", flush=True)
+    finally:
+        for ex in executors.values():
+            ex.shutdown()
     if failures:
         raise SystemExit(f"{failures} run(s) failed")
 

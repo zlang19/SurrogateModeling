@@ -75,7 +75,9 @@ def plot_error_vs_cost(df: pd.DataFrame, problem: str, output: str, path: Path, 
 
 
 def report(results_dir: Path) -> list[Path]:
-    """Read every run Parquet under results_dir/runs and write NRMSE plots to results_dir/plots."""
+    """Read every run Parquet under results_dir/runs; write NRMSE plots and ranking.md."""
+    from surrogatemodeling.report.ranking import auc_table, summary_markdown
+
     df = pd.concat([pd.read_parquet(p) for p in sorted((results_dir / "runs").glob("*.parquet"))])
     outputs = sorted({c.split("/", 1)[1] for c in df.columns if c.startswith("nrmse/")})
     written = []
@@ -85,4 +87,9 @@ def report(results_dir: Path) -> list[Path]:
                 path = results_dir / "plots" / f"{problem}__{output}__nrmse.png"
                 plot_error_vs_cost(df, problem, output, path)
                 written.append(path)
+    table = auc_table(df)
+    table.to_csv(results_dir / "ranking.csv", index=False)
+    ranking = results_dir / "ranking.md"
+    ranking.write_text(summary_markdown(table))
+    written += [results_dir / "ranking.csv", ranking]
     return written

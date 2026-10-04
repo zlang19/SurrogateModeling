@@ -5,13 +5,15 @@ description = "Test bed for surrogate modeling methods against noisy, multi-fide
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "botorch>=0.18.1",
+    "botorch[fully-bayesian]>=0.18.1",
     "gpytorch>=1.15.2",
     "matplotlib>=3.11.2",
     "numpy>=2.5.3",
     "pandas>=3.0.6",
     "pyarrow>=25.0.1",
+    "scikit-learn>=1.9.1",
     "scipy>=1.18.1",
+    "tabulate>=0.10.0",
     "torch>=2.14.1",
 ]
 
