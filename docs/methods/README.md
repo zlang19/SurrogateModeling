@@ -84,4 +84,4 @@ From the `full` experiment: 7 problems, 10 seeds, a budget of 100 high-fidelity-
 | 6 | `sobol_gp` | 5.22 |
 | 7 | `sobol_pce` | 7.00 |
 
-`uv run sm report results/full` regenerates the full tables in `results/full/ranking.md`, including coverage and the AUC metric. What these numbers mean is in [../Learnings.md](../Learnings.md).
+`uv run sm report results/full` regenerates the full tables in `results/full/ranking.md`, including coverage and the AUC metric. What each table measures is in [../EvaluationCriteria.md](../EvaluationCriteria.md). What these numbers mean is in [../Learnings.md](../Learnings.md).

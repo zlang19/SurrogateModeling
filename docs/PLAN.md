@@ -167,7 +167,8 @@ numpy, scipy, torch, gpytorch, botorch, scikit-learn, SALib, pandas, pyarrow, ma
 ## Future Notes
 * ✅ Live dashboard
 * ✅ Documentation of the problems and modeling methods
-* Other modern cost-aware functions
-* Actual OpenMC reactor models and cross sections and uncertainties
+* ✅ Other modern cost-aware functions
+* ✅ Actual OpenMC reactor models and cross sections and uncertainties
+* ✅  Fix issue with always picking the lowest fidelity
+* Best IV model but with EPIG acquisition
 * HIPE with EPIG: HIPE replaces the Sobol seed phase of the hybrids (#4c); evaluate once the baselines work
-* Fix issue with always picking the lowest fidelity
