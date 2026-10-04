@@ -47,8 +47,15 @@ uv run sm dashboard                                   # live dashboard → http:
 | `borehole_d30` | 30 | flow | Borehole + 22 padding inputs (half weak, half inert) |
 | `wing_weight_d40` | 40 | weight | Wing weight + 30 padding inputs |
 | `toymc` | 23 | k_eff, power_ratio, capture_to_fission | **Toy MC neutronics:** 2-group k-eigenvalue Monte Carlo on a 1D slab, with real MC noise and batch-statistics σ |
+| `toymc_axial` | 25 | k_eff, axial_offset, axial_peaking, capture_to_fission | **1D twin of the OpenMC column**, calibrated to it, with a 12-config menu of particles / inactive / active cycles. Cheap configs are biased, and axial offset's σ is under-reported about 5× |
 
-Analytic problems get MCNP-like synthetic noise: σ ∝ 1/√fidelity, with a reported σ that is itself noisy. Cost is `overhead + (1 − overhead)·fidelity`, with a 1% default overhead. The fidelity ladder is [1/16, 1/4, 1]. Details are in [docs/PLAN.md](docs/PLAN.md).
+The **OpenMC problem** ([problems/openmc/](src/surrogatemodeling/problems/openmc/)) is a 2 m-tall 3×3 pin column with 14 inputs and the same 4 outputs, about 6 CPU-min per high-fidelity run. It runs as a subprocess from the `openmc-env` conda env, with ENDF/B-VIII.1 data. It's used for fidelity characterization (`studies/fidelity_characterization.py`) and final validation, not as a regular benchmark problem.
+
+Fidelity is a **menu of configurations** declared by each problem (interface v2), and methods choose a config per point.
+- **Analytic problems** use a one-knob history menu [1/16, 1/4, 1], with MCNP-like synthetic noise (σ ∝ 1/√histories, and a reported σ that is itself noisy) and a 1% fixed overhead.
+- **`toymc_axial`** uses OpenMC's measured cost shape: 3% fixed plus particles × (inactive + active).
+
+Details are in [docs/PLAN.md](docs/PLAN.md) and [docs/CostAwarePlan.md](docs/CostAwarePlan.md).
 
 ## Methods
 
@@ -62,6 +69,9 @@ Analytic problems get MCNP-like synthetic noise: σ ∝ 1/√fidelity, with a re
 | 5 | [`adaptive_iv_mf`](docs/methods/adaptive_iv_mf.md) | Cost-aware IV: chooses fidelity per point |
 | 5b | [`adaptive_iv_mf_xn`](docs/methods/adaptive_iv_mf_xn.md) | #5 + learned extra noise (**current best**) |
 | 6 | [`screen_gp`](docs/methods/screen_gp.md) | ARD screening → GP on active inputs |
+| 7 | [`adaptive_iv_mf_ck`](docs/methods/adaptive_iv_mf_ck.md) | Co-kriging: per-config bias GP with a bias-aware cost-aware acquisition |
+| 7c | [`adaptive_iv_mf_ck_cal`](docs/methods/adaptive_iv_mf_ck_cal.md) | #7 + conformal-style LOO calibration of the error bars |
+| 7s | [`adaptive_iv_mf_cks`](docs/methods/adaptive_iv_mf_cks.md) | #7 with learned per-config σ scales, for tally errors under-reported by a factor |
 
 The shared machinery (GP core, greedy batch acquisition) and a full results table are in [docs/methods/README.md](docs/methods/README.md).
 
@@ -104,12 +114,18 @@ grep -c "] done" results/full_run.log    # progress (or use the dashboard)
 systemctl --user stop sm-full            # stop; re-running the command resumes
 ```
 
-Memory-heavy methods can be capped per config:
+Memory-heavy methods can be capped per config: per method, or as a shared pool:
 
 ```toml
 [limits]
 sobol_saas = 3   # at most 3 SAAS runs at a time (~3 GB each)
+
+[pools.costaware]               # these methods share one 5-worker pool
+methods = ["adaptive_iv_mf_xn", "adaptive_iv_mf_ck"]
+workers = 5
 ```
+
+Each worker process handles one run and then exits, so memory can't accumulate across runs. If a run still exceeds the cap, systemd-oomd kills the benchmark, not VS Code. Finished runs are kept; rerun the command to resume.
 
 ## Experiment configs
 
@@ -121,6 +137,8 @@ sobol_saas = 3   # at most 3 SAAS runs at a time (~3 GB each)
 | `full_saas.toml` | SAAS only, into `results/full`. **On hold:** don't run without the owner's go-ahead |
 | `step1–3.toml` | Historical baseline runs from the build-up |
 | `dashdemo.toml` | Small live run for trying the dashboard |
+| `costaware.toml` | Baseline, #5b, #7, #7s on `toymc_axial`, `toymc`, `borehole_d30` (10 seeds). Cost-aware methods share a 5-worker pool |
+| `costaware_extra.toml` | #5 and #7c on `toymc_axial` (5 seeds) |
 
 ## Project layout
 
@@ -149,3 +167,4 @@ To add a method or problem, implement the protocol in `core/protocols.py`, regis
 | [docs/methods/](docs/methods/README.md) | One page per method, the shared GP and acquisition machinery, and results tables |
 | [docs/Learnings.md](docs/Learnings.md) | Findings so far: results, method pitfalls, toy MC lessons, operations, open questions |
 | [docs/DashboardPlan.md](docs/DashboardPlan.md) | The live dashboard: logging format, run states, ETAs, page design |
+| [docs/CostAwarePlan.md](docs/CostAwarePlan.md) | Cost-aware / multi-fidelity work: the fidelity knobs, the OpenMC study, toy calibration, candidate triage |

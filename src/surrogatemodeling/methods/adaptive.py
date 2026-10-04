@@ -29,9 +29,10 @@ class AdaptiveGP:
 
     def setup(self, spec: ProblemSpec, budget: float, rng: np.random.Generator) -> None:
         self.spec, self.rng = spec, rng
-        self.fidelities = np.array(spec.fidelity_ladder if self.cost_aware and spec.fidelity_ladder else [1.0])
-        self.costs = np.array([spec.cost(f) for f in self.fidelities])
-        self.unit_cost = spec.cost(1.0)
+        # Options are fidelity config indices: the whole menu when cost-aware, else HF only.
+        self.options = np.arange(len(spec.fidelities)) if self.cost_aware else np.array([spec.hf])
+        self.costs = np.array([spec.cost(i) for i in self.options])
+        self.unit_cost = spec.cost(spec.hf)
         n_seed = max(2, int(np.floor(SEED_FRACTION * budget / self.unit_cost)))
         self.queue = sobol_design(spec, n_seed, rng)
         self.ref = spec.dist.sample(N_REF, rng)
@@ -46,23 +47,23 @@ class AdaptiveGP:
         if len(self.queue):
             k = min(n, len(self.queue), int(np.floor(budget_remaining / self.unit_cost + 1e-9)))
             X, self.queue = self.queue[:k], self.queue[k:]
-            self.last_batch = {"phase": "seed", "fidelities": [1.0] * k}
-            return X, np.ones(k)
+            self.last_batch = {"phase": "seed", "fidelities": [self.spec.fidelities[self.spec.hf].name] * k}
+            return X, np.full(k, self.spec.hf)
         self._refresh()
         cand = self._candidates()
-        U = self.spec.dist.to_unit(np.vstack([self.ref, cand]))
+        U = self._query(self.spec.dist.to_unit(np.vstack([self.ref, cand])))
         tau2 = self._noise_options(len(cand))
-        hf = int(np.argmax(self.fidelities))
+        hf = int(np.flatnonzero(self.options == self.spec.hf)[0])
         scores: list[float] = []
         chosen = greedy_batch(
             self.gp.joint_cov(U), N_REF, tau2, self.costs, n, budget_remaining,
             score=self.score, cost_aware=self.cost_aware, target_tau2=tau2[:, hf, 0], scores_out=scores,
         )
         idx = [c for c, _ in chosen]
-        fids = self.fidelities[[f for _, f in chosen]]
+        fids = self.options[[f for _, f in chosen]]
         self.last_batch = {
             "phase": "adaptive",
-            "fidelities": [float(f) for f in fids],
+            "fidelities": [self.spec.fidelities[i].name for i in fids],
             "best_score": scores[0] if scores else None,
             "hf_noise_sd": dict(zip(self.spec.output_names, map(float, np.sqrt(self._hf_var)), strict=True)),
         }
@@ -77,8 +78,12 @@ class AdaptiveGP:
 
     def predict(self, X: np.ndarray) -> Prediction:
         self._refresh()
-        mean, var = self.gp.predict(self.spec.dist.to_unit(X))
+        mean, var = self.gp.predict(self._query(self.spec.dist.to_unit(X)))
         return Prediction(mean=mean, var=var)
+
+    def _query(self, U: np.ndarray) -> np.ndarray:
+        """Model inputs for predicting the high-fidelity output at unit-box points U."""
+        return U
 
     # --- internals -----------------------------------------------------------------------
 
@@ -99,15 +104,23 @@ class AdaptiveGP:
         return np.vstack([uniform, from_dist])
 
     def _noise_options(self, n_cand: int) -> np.ndarray:
-        """(m, F, C) expected noise variance in standardized units.
+        """(m, F, C) expected noise variance in standardized units, per fidelity option.
 
-        MC noise variance scales as 1/fidelity, so one high-fidelity level per output is
-        estimated as the median of var * fidelity over the data seen so far.
+        A config already run uses the median reported variance of its own points (so
+        cycle-dependent noise is learned, not assumed). An untried config falls back to
+        MC scaling: the HF-equivalent variance (median of var x relative histories over all
+        data) divided by its relative histories.
         """
-        hf_var = np.median(self.data.var * self.data.fidelity[:, None], axis=0)
-        self._hf_var = hf_var
+        rel = np.array([self.spec.relative_histories(i) for i in self.data.fidelity])
+        hf_equiv = np.median(self.data.var * rel[:, None], axis=0)  # (m,)
+        tau2 = np.empty((self.spec.n_outputs, len(self.options)))
+        for j, opt in enumerate(self.options):
+            seen = self.data.fidelity == opt
+            tau2[:, j] = (
+                np.median(self.data.var[seen], axis=0) if seen.any() else hf_equiv / self.spec.relative_histories(opt)
+            )
+        self._hf_var = hf_equiv
         extra = self.gp.extra_noise_var()
-        tau2 = hf_var[:, None] / self.fidelities[None, :]  # (m, F)
         if extra is not None:
             tau2 = tau2 + extra[:, None]
         tau2 = tau2 / self.gp.scale[:, None] ** 2

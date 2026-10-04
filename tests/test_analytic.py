@@ -5,7 +5,7 @@ from surrogatemodeling.problems.analytic import borehole, mc_cost, padded, wing_
 from surrogatemodeling.registry import PROBLEMS
 
 
-@pytest.mark.parametrize("name", [n for n in PROBLEMS if n != "toymc"])  # toymc truth is slow; see test_toymc
+@pytest.mark.parametrize("name", [n for n in PROBLEMS if not n.startswith("toymc")])  # MC truth is slow; see test_toymc*
 def test_problem_outputs_are_finite_and_vary(name):
     p = PROBLEMS[name]()
     X, Y = p.test_set()
@@ -13,7 +13,7 @@ def test_problem_outputs_are_finite_and_vary(name):
     assert Y.shape == (2000, p.spec.n_outputs)
     assert np.all(np.isfinite(Y))
     assert np.all(np.std(Y, axis=0) > 0)
-    assert p.spec.cost(1.0) == pytest.approx(1.0)
+    assert p.spec.cost(p.spec.hf) == pytest.approx(1.0)
 
 
 def test_cost_has_overhead_and_is_monotone():

@@ -1,0 +1,13 @@
+# Cost-aware plan, extra arms (5 seeds, toymc_axial): #5 as follow-up (b)'s control, and
+# #7c (calibration only rescales error bars, so 5 seeds suffice to read its coverage).
+name = "costaware"
+budget = 100
+batch_size = 5
+seeds = 5
+workers = 5
+problems = ["toymc_axial"]
+methods = ["adaptive_iv_mf", "adaptive_iv_mf_ck_cal"]
+
+[pools.costaware]
+methods = ["adaptive_iv_mf", "adaptive_iv_mf_ck_cal"]
+workers = 5

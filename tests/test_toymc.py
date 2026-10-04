@@ -28,7 +28,7 @@ def test_low_fidelity_is_unbiased():
 def test_reported_sigma_matches_spread_for_k_eff():
     p = ToyMCProblem()
     X = np.tile(NOMINAL, (16, 1))
-    obs = p.evaluate(X, np.full(16, 0.5), np.random.default_rng(0))
+    obs = p.evaluate(X, np.full(16, p.spec.hf), np.random.default_rng(0))
     assert 0.6 < obs.y[:, 0].std(ddof=1) / obs.sigma[:, 0].mean() < 1.6
 
 
@@ -49,4 +49,4 @@ def test_physics_sensitivities_have_expected_signs():
 def test_fidelity_spec():
     spec = ToyMCProblem().spec
     assert spec.dim == 23 and spec.n_outputs == 3
-    assert spec.cost(1.0) == pytest.approx(1.0)
+    assert spec.cost(spec.hf) == pytest.approx(1.0)

@@ -63,11 +63,13 @@ def greedy_batch(
 
     covs:  per output, (R + C, R + C) latent covariance (standardized units)
     tau2:  (m, F, C) observation noise variance per output, fidelity option and candidate
-    costs: (F,) cost of each fidelity option
+    costs: (F,) cost of each fidelity option, or (F, C) for a cost per candidate row
     target_tau2: (m,) noise on EPIG's targets y*; ignored by "iv"
     scores_out: if given, the winning score of each pick is appended to it
     """
     fn = SCORES[score]
+    n_cand = tau2.shape[2]
+    costs = np.broadcast_to(np.asarray(costs, dtype=float).reshape(len(costs), -1), (len(costs), n_cand))
     K = [c.copy() for c in covs]
     target = np.zeros(len(K)) if target_tau2 is None else target_tau2
     chosen = []
@@ -77,7 +79,7 @@ def greedy_batch(
             break
         total = sum(np.stack([fn(K[o], n_ref, tau2[o, f], target[o]) for f in range(len(costs))]) for o in range(len(K)))
         if cost_aware:
-            total = total / costs[:, None]
+            total = total / costs
         total[~affordable] = -np.inf
         f, c = np.unravel_index(np.argmax(total), total.shape)
         if scores_out is not None:
@@ -85,5 +87,5 @@ def greedy_batch(
         for o in range(len(K)):
             K[o] = rank_one_update(K[o], n_ref + c, tau2[o, f, c])
         chosen.append((int(c), int(f)))
-        budget -= costs[f]
+        budget -= costs[f, c]
     return chosen

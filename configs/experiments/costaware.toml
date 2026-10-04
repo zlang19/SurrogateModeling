@@ -1,0 +1,14 @@
+# Cost-aware plan steps 4-5 (10 seeds): #5b vs the co-kriging family on the calibrated,
+# biased cycle menu (toymc_axial) and on the earlier MCNP-like problems.
+name = "costaware"
+budget = 100
+batch_size = 5
+seeds = 10
+workers = 10
+problems = ["toymc_axial", "toymc", "borehole_d30"]
+methods = ["sobol_gp", "adaptive_iv_mf_xn", "adaptive_iv_mf_ck", "adaptive_iv_mf_cks"]
+
+# Cost-aware runs accumulate ~1-2k cheap points; share one capped pool (~3 GB each).
+[pools.costaware]
+methods = ["adaptive_iv_mf", "adaptive_iv_mf_xn", "adaptive_iv_mf_ck", "adaptive_iv_mf_ck_cal", "adaptive_iv_mf_cks"]
+workers = 5

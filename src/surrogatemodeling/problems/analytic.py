@@ -10,12 +10,11 @@ Experiments (Surjanovic & Bingham, sfu.ca/~ssurjano).
 from __future__ import annotations
 
 from collections.abc import Callable
-from functools import partial
 
 import numpy as np
 
 from surrogatemodeling.core import distributions as D
-from surrogatemodeling.core.protocols import Observation, ProblemSpec
+from surrogatemodeling.core.protocols import FidelityConfig, Observation, ProblemSpec
 from surrogatemodeling.problems.base import CachedTestSet, NoiseModel
 
 DEFAULT_LADDER = [1 / 16, 1 / 4, 1.0]
@@ -29,6 +28,12 @@ def mc_cost(fidelity: float, overhead: float = DEFAULT_OVERHEAD) -> float:
     return overhead + (1 - overhead) * float(fidelity)
 
 
+def history_menu(ladder: list[float] = DEFAULT_LADDER, overhead: float = DEFAULT_OVERHEAD) -> tuple[list[FidelityConfig], int]:
+    """One-knob menu: fractions of high-fidelity histories, cheapest first; returns (menu, hf index)."""
+    menu = [FidelityConfig(f"h={f:g}", {"histories": float(f)}, mc_cost(f, overhead)) for f in sorted(ladder)]
+    return menu, len(menu) - 1
+
+
 class AnalyticProblem(CachedTestSet):
     def __init__(
         self,
@@ -39,7 +44,8 @@ class AnalyticProblem(CachedTestSet):
         noise: NoiseModel | None = None,
         overhead: float = DEFAULT_OVERHEAD,
     ):
-        self.spec = ProblemSpec(name, dist, output_names, partial(mc_cost, overhead=overhead), DEFAULT_LADDER)
+        menu, hf = history_menu(overhead=overhead)
+        self.spec = ProblemSpec(name, dist, output_names, menu, hf)
         self.fn = fn
         self.overhead = overhead
         if noise is None:
@@ -55,7 +61,8 @@ class AnalyticProblem(CachedTestSet):
         return np.std(self.truth(X), axis=0)
 
     def evaluate(self, X: np.ndarray, fidelity: np.ndarray, rng: np.random.Generator) -> Observation:
-        return self.noise.observe(self.truth(X), np.asarray(fidelity, dtype=float), rng)
+        frac = np.array([self.spec.fidelities[i].knobs["histories"] for i in fidelity])
+        return self.noise.observe(self.truth(X), frac, rng)
 
 
 # --- Borehole (8D) ---------------------------------------------------------------------

@@ -27,13 +27,13 @@ class Dataset:
 
     def __init__(self, spec: ProblemSpec):
         self.X = np.empty((0, spec.dim))
-        self.fidelity = np.empty(0)
+        self.fidelity = np.empty(0, dtype=int)  # config indices
         self.y = np.empty((0, spec.n_outputs))
         self.var = np.empty((0, spec.n_outputs))
 
     def add(self, X, fidelity, y, sigma) -> None:
         self.X = np.vstack([self.X, X])
-        self.fidelity = np.concatenate([self.fidelity, fidelity])
+        self.fidelity = np.concatenate([self.fidelity, np.asarray(fidelity, dtype=int)])
         self.y = np.vstack([self.y, y])
         self.var = np.vstack([self.var, sigma**2])
 
@@ -46,7 +46,7 @@ class FixedDesignMethod:
 
     def setup(self, spec: ProblemSpec, budget: float, rng: np.random.Generator) -> None:
         self.spec = spec
-        self.unit_cost = spec.cost(1.0)
+        self.unit_cost = spec.cost(spec.hf)
         self.queue = sobol_design(spec, int(np.floor(budget / self.unit_cost + 1e-9)), rng)
         self.data = Dataset(spec)
         self.stale = True
@@ -54,7 +54,7 @@ class FixedDesignMethod:
     def ask(self, n: int, budget_remaining: float) -> tuple[np.ndarray, np.ndarray]:
         k = min(n, len(self.queue), int(np.floor(budget_remaining / self.unit_cost + 1e-9)))
         X, self.queue = self.queue[:k], self.queue[k:]
-        return X, np.ones(k)
+        return X, np.full(k, self.spec.hf)
 
     def tell(self, X, fidelity, y, sigma) -> None:
         self.data.add(X, fidelity, y, sigma)

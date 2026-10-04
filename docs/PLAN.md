@@ -95,25 +95,35 @@ Build a test bed for surrogate modeling methods against complex simulation probl
 - #5b was added after the first full run. #5 plateaued at 0.27 NRMSE on the toy MC power ratio, whose batch σ is about 2× under-reported: with about 1000 low-fidelity points it fit the noise. Learning extra noise fixed it (0.10 on 3 seeds) at no cost elsewhere. Lesson for MCNP: cost-aware sampling is only as good as the tally σ, so don't take σ at face value.
 - Open: #5/#5b always pick the lowest fidelity on the ladder (1/16). Follow-up (b) tests whether that holds with a realistic MCNP per-run overhead and a finer ladder.
 
-## Interface (frozen)
+## Interface (v2, 2026-10-04)
+v1 was frozen with a scalar `fidelity in (0, 1]`. v2 deliberately breaks that: once cycles became fidelity knobs (see [CostAwarePlan.md](CostAwarePlan.md)), low fidelity is no longer a single dimension, nor unbiased. Fidelity is now a **menu of configurations** the problem declares, and methods choose a config *index* per point. The analytic and toy MC menus reproduce the v1 ladder [1/16, 1/4, 1].
+
 ```python
+@dataclass
+class FidelityConfig:
+    name: str
+    knobs: dict[str, float]   # e.g. {"histories": 0.25} or {"particles": 1000, "inactive": 25, "active": 100}
+    cost: float               # high-fidelity run == 1
+
 @dataclass
 class ProblemSpec:            # what a Method may see; never the truth function
     name: str
     dist: Distribution        # independent marginals: sample(n, rng), bounds() -> box
     output_names: list[str]
-    cost: Callable[[float], float]      # fidelity in (0,1] -> cost; cost(1.0) == 1
-    fidelity_ladder: list[float] | None # optional hint, methods may ignore
+    fidelities: list[FidelityConfig]
+    hf: int                   # index of the high-fidelity config
+    def cost(idx) -> float
+    def relative_histories(idx) -> float   # scored histories vs HF, from the knobs
 
 class Problem(Protocol):
     spec: ProblemSpec
-    def evaluate(self, X, fidelity, rng) -> Observation  # y (n,m), sigma (n,m); sigma itself noisy
+    def evaluate(self, X, fidelity_idx, rng) -> Observation  # y (n,m), sigma (n,m); sigma itself noisy
     def test_set(self) -> tuple[X, Y_true]               # cached, 2000 pts from dist
 
 class Method(Protocol):
     def setup(self, spec: ProblemSpec, budget: float, rng) -> None
-    def ask(self, n: int, budget_remaining: float) -> tuple[X, fidelity]  # may return < n
-    def tell(self, X, fidelity, y, sigma) -> None
+    def ask(self, n: int, budget_remaining: float) -> tuple[X, fidelity_idx]  # may return < n
+    def tell(self, X, fidelity_idx, y, sigma) -> None
     def predict(self, X) -> Prediction   # mean (n,m), var (n,m) | None
 ```
 - Runner loop: `ask(5, remaining)` → `evaluate` → `tell` → `predict(test)` → log a row. It stops when the budget is exhausted or `ask` returns nothing.
@@ -155,9 +165,9 @@ numpy, scipy, torch, gpytorch, botorch, scikit-learn, SALib, pandas, pyarrow, ma
 5. Ranking and report, then the full run (7 methods × ~6 problems × 10 seeds ≈ 420 runs).
 
 ## Future Notes
-* Live dashboard
-* Documentation of the problems and modeling methods
+* ✅ Live dashboard
+* ✅ Documentation of the problems and modeling methods
+* Other modern cost-aware functions
 * Actual OpenMC reactor models and cross sections and uncertainties
 * HIPE with EPIG: HIPE replaces the Sobol seed phase of the hybrids (#4c); evaluate once the baselines work
-* Other modern cost-aware functions
 * Fix issue with always picking the lowest fidelity

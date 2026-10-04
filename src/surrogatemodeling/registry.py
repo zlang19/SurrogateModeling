@@ -6,10 +6,12 @@ from collections.abc import Callable
 
 from surrogatemodeling.core.protocols import Method, Problem
 from surrogatemodeling.methods.adaptive import AdaptiveGP, ScreenedGP
+from surrogatemodeling.methods.cokriging import CoKrigingAdaptive
 from surrogatemodeling.methods.gp_fixed import SobolGP
 from surrogatemodeling.methods.pce import SobolPCE
 from surrogatemodeling.methods.saas import SobolSAAS
 from surrogatemodeling.problems.analytic import borehole, morris, otl, padded, wing_weight
+from surrogatemodeling.problems.toymc.axial_problem import ToyMCAxialProblem
 from surrogatemodeling.problems.toymc.problem import ToyMCProblem
 
 PROBLEMS: dict[str, Callable[[], Problem]] = {
@@ -20,6 +22,8 @@ PROBLEMS: dict[str, Callable[[], Problem]] = {
     "borehole_d30": lambda: padded(borehole(), 30),
     "wing_weight_d40": lambda: padded(wing_weight(), 40),
     "toymc": ToyMCProblem,
+    # 1D twin of the OpenMC column, with the calibrated 12-config cycle/particle menu.
+    "toymc_axial": ToyMCAxialProblem,
 }
 
 METHODS: dict[str, Callable[[], Method]] = {
@@ -33,4 +37,11 @@ METHODS: dict[str, Callable[[], Method]] = {
     # #5 plus a learned homoscedastic noise term on top of the reported σ (guards against
     # under-reported tally errors, which otherwise get interpolated as signal).
     "adaptive_iv_mf_xn": lambda: AdaptiveGP(score="iv", cost_aware=True, extra_noise=True),
+    # #5b with a per-config bias GP (co-kriging), for menus whose cheap configs are biased.
+    "adaptive_iv_mf_ck": CoKrigingAdaptive,
+    # #7 plus conformal-style LOO calibration of the predictive variance (coverage).
+    "adaptive_iv_mf_ck_cal": lambda: CoKrigingAdaptive(calibrate=True),
+    # #7 with a learned per-config multiplicative scale on reported sigma^2 (instead of
+    # additive extra noise), for tally errors that are under-reported by a factor.
+    "adaptive_iv_mf_cks": lambda: CoKrigingAdaptive(noise_scale=True),
 }

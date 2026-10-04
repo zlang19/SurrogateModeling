@@ -3,8 +3,8 @@
 Every method implements the same ask/tell protocol ([protocols.py](../../src/surrogatemodeling/core/protocols.py)):
 
 ```python
-setup(spec, budget, rng)                    # spec: input distribution, outputs, cost(fidelity)
-ask(n, budget_remaining) -> (X, fidelity)   # up to n points; returning none ends the run
+setup(spec, budget, rng)                    # spec: input distribution, outputs, fidelity menu (v2)
+ask(n, budget_remaining) -> (X, fidelity)   # up to n points + a fidelity config index each
 tell(X, fidelity, y, sigma)                 # noisy outputs and their reported standard errors
 predict(X) -> Prediction(mean, var | None)  # var is the predictive variance of the noise-free output
 diagnostics() -> dict                       # optional; logged every batch, shown in the dashboard
@@ -24,6 +24,9 @@ The runner asks for batches of 5 and stops when the budget (in high-fidelity run
 | 5 | `adaptive_iv_mf` | Sobol seed → adaptive | GP + integrated variance per unit cost | Chooses from ladder | [adaptive_iv_mf.md](adaptive_iv_mf.md) |
 | 5b | `adaptive_iv_mf_xn` | Sobol seed → adaptive | #5 + learned extra noise | Chooses from ladder | [adaptive_iv_mf_xn.md](adaptive_iv_mf_xn.md) |
 | 6 | `screen_gp` | Sobol seed → adaptive | ARD screening → GP on active inputs | High only | [screen_gp.md](screen_gp.md) |
+| 7 | `adaptive_iv_mf_ck` | Sobol seed → adaptive | Co-kriging: per-config bias GP + bias-aware joint acquisition | Chooses from menu | [adaptive_iv_mf_ck.md](adaptive_iv_mf_ck.md) |
+| 7c | `adaptive_iv_mf_ck_cal` | Sobol seed → adaptive | #7 + conformal-style LOO calibration | Chooses from menu | [adaptive_iv_mf_ck_cal.md](adaptive_iv_mf_ck_cal.md) |
+| 7s | `adaptive_iv_mf_cks` | Sobol seed → adaptive | #7 with learned per-config σ scales (multiplicative) | Chooses from menu | [adaptive_iv_mf_cks.md](adaptive_iv_mf_cks.md) |
 
 The registry order in [registry.py](../../src/surrogatemodeling/registry.py) also fixes each method's color in plots and the dashboard.
 
@@ -37,7 +40,8 @@ All GP methods except SAAS use `IndependentGPs`:
 - **Inputs:** mapped to the unit training box.
 - **Outputs:** standardized inside the class.
 - **Noise:** fixed per point from the reported σ², so a 1/16-fidelity point is automatically trusted 16× less. With `extra_noise=True`, a homoscedastic noise term is learned on top.
-- **Refits:** hyperparameters are re-optimized only when the data has grown by 20% since the last full fit (`refit_growth`); in between, the previous hyperparameters are reused. The baseline `sobol_gp` re-optimizes every batch.
+- **Refits:** hyperparameters are re-optimized only when the data has grown by 20% since the last full fit (`refit_growth`); in between, the previous hyperparameters are reused (kernel, mean, and any trainable noise model). The baseline `sobol_gp` re-optimizes every batch.
+- **Exact solves:** every solve uses exact Cholesky. gpytorch's default switches to CG/Lanczos above 800 points, and its caches made cost-aware runs (about 2,000 cheap points) grow to 6–7 GB.
 
 ### Hybrid design and greedy batches
 Code: [adaptive.py](../../src/surrogatemodeling/methods/adaptive.py), [acquisition.py](../../src/surrogatemodeling/methods/acquisition.py).

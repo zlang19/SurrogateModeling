@@ -58,9 +58,9 @@ def run(
             break
         if len(X) > batch_size:
             raise ValueError(f"ask({batch_size}) returned {len(X)} points")
-        fid = np.asarray(fid, dtype=float)
-        if np.any(fid <= 0) or np.any(fid > 1):
-            raise ValueError(f"fidelity must lie in (0, 1], got {fid}")
+        fid = np.asarray(fid)
+        if not np.issubdtype(fid.dtype, np.integer) or np.any(fid < 0) or np.any(fid >= len(spec.fidelities)):
+            raise ValueError(f"fidelity must be config indices in [0, {len(spec.fidelities)}), got {fid}")
         cost = float(sum(spec.cost(f) for f in fid))
         if cost > budget - spent + _COST_TOL:
             raise BudgetExceededError(f"batch {batch} costs {cost:.6g} but only {budget - spent:.6g} remains")

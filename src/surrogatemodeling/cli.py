@@ -74,18 +74,26 @@ def cmd_run(config_path: Path, results_root: Path, force: bool) -> None:
 
     manifest = write_manifest(out_dir / "live", config_path, cfg, [j[:3] for j in jobs], workers)
     jobs = [(*job, manifest.stem) for job in jobs]
-    # Optional per-method concurrency caps, e.g. limits = { sobol_saas = 3 } for memory-heavy
-    # methods. Capped methods get their own pools; everything else shares the remainder.
-    limits = {m: int(n) for m, n in cfg.get("limits", {}).items() if any(j[1] == m for j in jobs)}
-    pools = {m: n for m, n in limits.items()}
-    pools[None] = max(1, workers - sum(limits.values()))
+    # Optional concurrency caps for memory-heavy methods:
+    #   [limits]  sobol_saas = 3                      -> that method gets its own 3-worker pool
+    #   [pools.heavy] methods = [...], workers = 4    -> those methods share one 4-worker pool
+    # Everything else shares the remaining workers.
+    present = {j[1] for j in jobs}
+    groups = {m: (m, int(n)) for m, n in cfg.get("limits", {}).items() if m in present}
+    for name, pool_cfg in cfg.get("pools", {}).items():
+        for m in pool_cfg["methods"]:
+            if m in present:
+                groups[m] = (f"pool:{name}", int(pool_cfg["workers"]))
+    pools = dict(groups.values())
+    pools[None] = max(1, workers - sum(pools.values()))
     failures = 0
     ctx = multiprocessing.get_context("spawn")  # spawn, not fork: torch autograd state does not survive fork
-    executors = {key: ProcessPoolExecutor(max_workers=n, mp_context=ctx) for key, n in pools.items()}
+    # One run per worker process, so memory never accumulates across runs.
+    executors = {key: ProcessPoolExecutor(max_workers=n, mp_context=ctx, max_tasks_per_child=1) for key, n in pools.items()}
     try:
         futures = {}
         for job in jobs:
-            pool = executors[job[1] if job[1] in limits else None]
+            pool = executors[groups[job[1]][0] if job[1] in groups else None]
             futures[pool.submit(_run_one, *job)] = job
         for i, fut in enumerate(as_completed(futures), 1):
             problem, method, seed = futures[fut][:3]

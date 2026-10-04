@@ -8,12 +8,11 @@ from __future__ import annotations
 
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
-from functools import partial
 
 import numpy as np
 
 from surrogatemodeling.core import distributions as D
-from surrogatemodeling.core.protocols import Observation, ProblemSpec
+from surrogatemodeling.core.protocols import FidelityConfig, Observation, ProblemSpec
 from surrogatemodeling.problems.analytic import DEFAULT_LADDER, DEFAULT_OVERHEAD, mc_cost
 from surrogatemodeling.problems.base import TEST_SET_SEED, TEST_SET_SIZE, cache_dir
 from surrogatemodeling.problems.toymc.physics import run_kcode
@@ -61,27 +60,45 @@ def _params(x: np.ndarray) -> dict[str, float]:
     return dict(zip(DIST.names, map(float, x), strict=True))
 
 
-def _particles(fidelity: float) -> int:
-    return max(MIN_PARTICLES, round(HF_PARTICLES * fidelity))
+HF_INACTIVE, HF_ACTIVE = 15, 20
 
 
-def _run_point(x: np.ndarray, n_particles: int, seed: list[int]) -> tuple[np.ndarray, np.ndarray]:
-    est = run_kcode(_params(x), n_particles, np.random.default_rng(seed))
+def default_menu(overhead: float = DEFAULT_OVERHEAD) -> tuple[list[FidelityConfig], int]:
+    """v1-equivalent menu: particles scaled by the history ladder, generations fixed."""
+    menu = [
+        FidelityConfig(
+            f"h={f:g}",
+            {"particles": max(MIN_PARTICLES, round(HF_PARTICLES * f)), "inactive": HF_INACTIVE, "active": HF_ACTIVE},
+            mc_cost(f, overhead),
+        )
+        for f in sorted(DEFAULT_LADDER)
+    ]
+    return menu, len(menu) - 1
+
+
+def _run_point(x: np.ndarray, knobs: dict, seed: list[int]) -> tuple[np.ndarray, np.ndarray]:
+    est = run_kcode(
+        _params(x), int(knobs["particles"]), np.random.default_rng(seed),
+        inactive=int(knobs["inactive"]), active=int(knobs["active"]),
+    )
     return est.mean, est.std_err
 
 
 def _truth_chunk(X: np.ndarray, start: int) -> np.ndarray:
-    n = _particles(TRUTH_FIDELITY)
-    return np.array([_run_point(x, n, [TEST_SET_SEED, _TRUTH_STREAM, start + i])[0] for i, x in enumerate(X)])
+    knobs = {"particles": HF_PARTICLES * TRUTH_FIDELITY, "inactive": HF_INACTIVE, "active": HF_ACTIVE}
+    return np.array([_run_point(x, knobs, [TEST_SET_SEED, _TRUTH_STREAM, start + i])[0] for i, x in enumerate(X)])
 
 
 class ToyMCProblem:
-    def __init__(self, overhead: float = DEFAULT_OVERHEAD):
-        self.spec = ProblemSpec("toymc", DIST, OUTPUTS, partial(mc_cost, overhead=overhead), DEFAULT_LADDER)
+    def __init__(self, overhead: float = DEFAULT_OVERHEAD, menu: tuple[list[FidelityConfig], int] | None = None):
+        fidelities, hf = menu or default_menu(overhead)
+        self.spec = ProblemSpec("toymc", DIST, OUTPUTS, fidelities, hf)
 
     def evaluate(self, X: np.ndarray, fidelity: np.ndarray, rng: np.random.Generator) -> Observation:
         seeds = rng.integers(0, 2**63, size=len(X))
-        results = [_run_point(x, _particles(f), [int(s)]) for x, f, s in zip(X, fidelity, seeds, strict=True)]
+        results = [
+            _run_point(x, self.spec.fidelities[i].knobs, [int(s)]) for x, i, s in zip(X, fidelity, seeds, strict=True)
+        ]
         return Observation(y=np.array([r[0] for r in results]), sigma=np.array([r[1] for r in results]))
 
     def test_set(self, workers: int | None = None) -> tuple[np.ndarray, np.ndarray]:

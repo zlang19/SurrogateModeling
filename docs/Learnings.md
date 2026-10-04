@@ -25,6 +25,40 @@ What the test bed has taught us so far, as of 2026-10-04. Each entry gives the e
 ### Adaptive point selection helps a little; the model and the noise matter more
 - **Evidence:** integrated variance (#4) and EPIG (#4b) beat the fixed Sobol design only modestly (e.g. OTL 0.033 vs 0.041) and not at all in 30–40 dimensions. They are essentially tied with each other.
 
+## Fidelity in a real Monte Carlo code (OpenMC study, 2026-10-04)
+
+From `studies/fidelity_characterization.py`: 1,204 OpenMC runs of a 2 m-tall 3×3 pin column, which shares a full core's slow axial source convergence. Full tables are in `results/openmc_fidelity/report.md`.
+
+- **Source convergence takes about 50 batches** from a flat start, and high fidelity uses 100 inactive. Matching *convergence* to production MCNP mattered more than matching the raw history count: 10⁵ × 500 would be about an hour per run here.
+- **Cost:** about 11 s fixed (3% of a high-fidelity run), plus cost proportional to particles × (inactive + active).
+  - Cutting active cycles still pays for every inactive cycle: 1/8 of the active cycles costs 37% of high fidelity.
+  - Cutting particles scales almost proportionally, so it's the cheap way to get fewer histories.
+  - The 1% overhead the analytic problems assumed was far too optimistic.
+- **σ under-reporting depends on the output, not the knobs:**
+
+  | Output | Real spread ÷ reported σ |
+  |---|---|
+  | axial offset | about 4× |
+  | axial peaking | about 2× |
+  | k-eff | about 1.15× |
+  | capture-to-fission | about 1.0× |
+
+  It's the same at every particle and cycle setting. Spatial outputs tied to the slowest source mode are the dangerous ones.
+- **Bias is real but concentrated:**
+  - Combined low settings (1,000 particles, 10 inactive, 25 active) are biased by 3–5 high-fidelity σ.
+  - Ten inactive cycles alone, or few particles, bias **peaking upward**: the maximum over noisy bins.
+  - Otherwise bias stays within about 1 high-fidelity σ.
+- **Measure the reference's error by its real noise, not its reported σ.** The first analysis flagged high fidelity itself as "biased" (z = 4.4 on axial offset), because the reference run's σ was under-reported too.
+- **The toy MC needed an axial redesign to mimic this.** Axial offset is an *antisymmetric* top/bottom tilt driven by the slowest source mode, and the symmetric slab's inner/outer ratio never sees it. `toymc_axial`, a 1D twin of the column, reproduces OpenMC's patterns: axial offset under-reported about 5×, peaking about 2×, bias only at low settings. It's somewhat harsher than OpenMC.
+
+## Bias-aware multi-fidelity
+
+- **Learned extra noise can't absorb a smooth bias.** On a Borehole variant whose cheap configs carry a smooth bias, #5b reached only 0.13 NRMSE, with **0.2 coverage**: confidently wrong.
+- **Co-kriging needs a bias-aware acquisition as well as a bias-aware model.**
+  - Adding each config's bias variance to the acquisition as independent noise improved the model (0.09–0.10, coverage 0.77), but it still bought only the cheapest config.
+  - Bias is *correlated*: many cheap runs near each other share one bias. Giving the acquisition a joint covariance over every (candidate, config) pair fixed this: **0.035–0.041 NRMSE, coverage 0.92–0.96**, with a genuine mix of high-fidelity and cheap runs.
+- **Bias at rarely used configs is poorly identified.** Its learned size there drifts large (about 5× the truth on the test problem), which makes the method conservative about those configs. That's safe, but it could waste options.
+
 ## Methods
 
 - **PCE needs proper hybrid LARS.** The first version, which chose terms by cross-validated LASSO, overfit and picked inert inputs. Scoring the full LAR path by corrected leave-one-out error fixed it. Even so, PCE ranks last here: it's competitive only on smooth, low-dimensional, low-noise problems.
@@ -44,6 +78,9 @@ What the test bed has taught us so far, as of 2026-10-04. Each entry gives the e
 - **Long runs must be memory-capped systemd services.** The full benchmark ran the 30 GB machine out of memory twice. Both times the kernel killed **VS Code** rather than the benchmark, and the run died with it. Background shells die with the Claude session, and `setsid` didn't escape VS Code's process group either. What works is `systemd-run --user ... -p MemoryHigh=20G -p MemoryMax=22G -p OOMScoreAdjust=500` (see the [README](../README.md#running-long-experiments)).
 - **JAX recompiles for every new data size.** SAAS reached about 6 GB per run from cached compiled NUTS kernels. Calling `jax.clear_caches()` once per fit brought the peak to about 3 GB. Calling it once per *output* made runs slower, because outputs share a compile.
 - **Memory-heavy methods need a concurrency limit.** `[limits] sobol_saas = 3` gives such a method its own process pool. Even at 3 GB each, SAAS runs take about 20 min, roughly 4 h for 70 runs on 6 workers, so they're split into their own config (`full_saas.toml`).
+- **gpytorch's iterative solvers made long GP runs grow to 6–7 GB.** Above 800 points, gpytorch switches from Cholesky to CG/Lanczos. Cost-aware runs on `toymc_axial` reach about 2,000 points, grew to 6–7 GB each, and systemd-oomd killed the experiment. That was the memory cap working as intended: VS Code survived. Forcing exact Cholesky (`max_cholesky_size`) kept a run flat at about 1 GB at n = 875 (2 GB before) and was slightly faster. Glibc allocator tuning made no difference, so it wasn't fragmentation.
+- **Warm starts must include every trainable piece.** Hyperparameters copied between full refits initially left out a new noise-scale module. It silently reset each batch, so learned σ scales read 0.9 instead of 25.
+- **Test fixtures can trigger expensive builds.** A test that builds every registered problem's test set tried to build `toymc_axial`'s 2-hour truth set inside pytest's temporary cache.
 - **Use spawn, not fork, for workers.** torch autograd state doesn't survive `fork`.
 - **Pin each worker to one thread** (torch and XLA flags). Ten workers each starting their own thread pool oversubscribe 12 cores.
 - **Standardize with ddof=1** to match botorch's input check. Otherwise every early fit emits a warning.
@@ -51,7 +88,7 @@ What the test bed has taught us so far, as of 2026-10-04. Each entry gives the e
 
 ## Open questions
 
-1. **Fidelity choice under realistic overhead:** does "always the lowest fidelity" survive a 10–20% fixed cost per run and a finer ladder? (Follow-up (b).)
+1. **Fidelity choice under realistic overhead:** with OpenMC's measured cost shape and the 12-config cycle/particle menu (`toymc_axial`), which configs do #5, #5b and #7 actually choose, and does bias-aware co-kriging beat #5b there? (The `costaware` experiment.)
 2. **SAAS:** does it close the padded-input gap at high fidelity? Its 70 runs are on hold, pending a decision on when to run them.
 3. **Multiplicative vs additive noise correction:** σ under-reporting is roughly a multiplicative factor, but #5b learns an *additive* term. A learned σ scale might be better on outputs whose noise varies strongly with fidelity.
 4. **Coverage:** can calibration be improved (e.g. by learning the noise model) without losing accuracy?
