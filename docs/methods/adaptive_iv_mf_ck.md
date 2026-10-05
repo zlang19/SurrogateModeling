@@ -44,4 +44,4 @@ A config that is rarely used has a poorly identified bias variance, which can dr
 
 ## Results
 - **Biased Borehole test (2 seeds, budget 60):** NRMSE 0.035–0.041 vs 0.125–0.134 for #5b; coverage 0.92–0.96 vs 0.19–0.23.
-- The full 10-seed comparison on the MCNP-like problems is in the `costaware` experiment (see [README](README.md#results-so-far)).
+- **`costaware` (10 seeds):** mean rank 1.62 (tied with #7s). Ties #5b on unbiased menus. On `toymc_axial`: k-eff 0.085, capture/fission 0.094 (#5b 0.130 / 0.120), but axial offset 0.311 vs baseline 0.216, with coverage 0.49. It still picks the cheapest config 99% of the time there.

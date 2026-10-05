@@ -120,10 +120,10 @@ class AdaptiveGP:
                 np.median(self.data.var[seen], axis=0) if seen.any() else hf_equiv / self.spec.relative_histories(opt)
             )
         self._hf_var = hf_equiv
+        tau2 = self.gp.model_var(tau2)  # reported variances: output units -> model scale
         extra = self.gp.extra_noise_var()
-        if extra is not None:
-            tau2 = tau2 + extra[:, None]
-        tau2 = tau2 / self.gp.scale[:, None] ** 2
+        if extra is not None:  # learned extra noise is already on the model's (possibly log) scale
+            tau2 = tau2 + extra[:, None] / self.gp.scale[:, None] ** 2
         return np.repeat(tau2[:, :, None], n_cand, axis=2)
 
 

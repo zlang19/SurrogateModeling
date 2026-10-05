@@ -48,15 +48,32 @@ def _hyper_modules(model: SingleTaskGP) -> dict[str, torch.nn.Module]:
     noise = getattr(model.likelihood, "noise_covar", None)
     if noise is not None and any(True for _ in noise.parameters()):  # e.g. learned per-config noise scales
         mods["noise_model"] = noise
+    warp = getattr(model, "input_transform", None)
+    if warp is not None and any(True for _ in warp.parameters()):  # e.g. learned input warping
+        mods["input_transform"] = warp
     return mods
 
 
 class IndependentGPs:
-    def __init__(self, extra_noise: bool = False, refit_growth: float = 1.2, calibrate: bool = False):
+    """
+    Options:
+      log_outputs   model outputs that are positive (in the first fit's data) on the log
+                    scale; predictions map back as lognormal mean/variance
+      jitter_seed   randomize the starting hyperparameters of every full fit (for ensembles)
+    `var_scale` (m,) may be set by a method to rescale predictive sd (e.g. prequential calibration).
+    """
+
+    def __init__(self, extra_noise: bool = False, refit_growth: float = 1.2, calibrate: bool = False,
+                 log_outputs: bool = False, jitter_seed: int | None = None):
         self.extra_noise = extra_noise
         self.refit_growth = refit_growth
         self.calibrate = calibrate
+        self.log_outputs = log_outputs
+        self._log: np.ndarray | None = None  # (m,) which outputs are modeled on the log scale
+        self._ref_y: np.ndarray | None = None  # (m,) typical |y| for mapping variances to the log scale
+        self._jitter = torch.Generator().manual_seed(jitter_seed) if jitter_seed is not None else None
         self.cal = None  # (m,) predictive-sd scale from LOO calibration; None = off
+        self.var_scale = None  # (m,) external predictive-sd scale; None = off
         self.models: list[SingleTaskGP] = []
         self.loc = self.scale = None
         self.active: np.ndarray | None = None  # input columns the GPs see; None = all
@@ -74,6 +91,7 @@ class IndependentGPs:
         self.active = active
         t0 = time.perf_counter()
         full_fit = not self._hypers or len(Xu) >= self.refit_growth * self._n_at_full_fit
+        Y, Var = self._to_model_scale(Y, Var)
         sd = Y.std(axis=0, ddof=1) if len(Y) > 1 else np.ones(Y.shape[1])
         self.loc, self.scale = Y.mean(axis=0), np.where(sd > 0, sd, 1.0)
         X = _t(self._cols(Xu))
@@ -83,6 +101,10 @@ class IndependentGPs:
             v = _t(np.maximum(Var[:, j] / self.scale[j] ** 2, _MIN_VAR))
             model = self._make_model(X, y, v)
             if full_fit:
+                if self._jitter is not None:  # random restart: perturb the starting lengthscales
+                    for name, p in model.named_parameters():
+                        if "raw_lengthscale" in name:
+                            p.data += torch.randn(p.shape, generator=self._jitter, dtype=p.dtype)
                 fit_gpytorch_mll(ExactMarginalLogLikelihood(model.likelihood, model))
             else:
                 for name, mod in _hyper_modules(model).items():
@@ -96,16 +118,38 @@ class IndependentGPs:
             self.cal = np.array([self._loo_scale(m) for m in self.models])
         self.last_fit = {"reoptimized": full_fit, "fit_time": time.perf_counter() - t0}
 
+    def _to_model_scale(self, Y: np.ndarray, Var: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Log-transform positive outputs (decided on the first fit); delta-method variances."""
+        if self._log is None:
+            self._log = (Y.min(axis=0) > 0) if self.log_outputs else np.zeros(Y.shape[1], dtype=bool)
+            self._ref_y = np.where(self._log, np.median(np.abs(Y), axis=0), 1.0)
+        if not self._log.any():
+            return Y, Var
+        Y, Var = Y.copy(), Var.copy()
+        pos = np.maximum(Y[:, self._log], 1e-6 * self._ref_y[self._log])
+        Y[:, self._log] = np.log(pos)
+        Var[:, self._log] = Var[:, self._log] / pos**2
+        return Y, Var
+
+    def model_var(self, var: np.ndarray) -> np.ndarray:
+        """Map output-unit variances (m, ...) to the standardized model scale."""
+        ref = (np.where(self._log, self._ref_y, 1.0) if self._log is not None else 1.0) * self.scale
+        return var / (np.asarray(ref) ** 2).reshape(-1, *([1] * (var.ndim - 1)))
+
     def _covar_module(self, d: int):
         """Kernel over the model inputs; None = botorch's default (ARD RBF). Subclasses override."""
         return None
 
+    def _input_transform(self, d: int):
+        """Optional botorch input transform (e.g. warping); None = identity. Subclasses override."""
+        return None
+
     def _make_model(self, X: torch.Tensor, y: torch.Tensor, v: torch.Tensor) -> SingleTaskGP:
-        covar = self._covar_module(X.shape[-1])
+        covar, warp = self._covar_module(X.shape[-1]), self._input_transform(X.shape[-1])
         if self.extra_noise:
             lik = FixedNoiseGaussianLikelihood(noise=v, learn_additional_noise=True)
-            return SingleTaskGP(X, y, likelihood=lik, covar_module=covar, outcome_transform=None)
-        return SingleTaskGP(X, y, train_Yvar=v[:, None], covar_module=covar, outcome_transform=None)
+            return SingleTaskGP(X, y, likelihood=lik, covar_module=covar, outcome_transform=None, input_transform=warp)
+        return SingleTaskGP(X, y, train_Yvar=v[:, None], covar_module=covar, outcome_transform=None, input_transform=warp)
 
     @staticmethod
     def _loo_scale(model: SingleTaskGP, level: float = 0.95) -> float:
@@ -138,9 +182,15 @@ class IndependentGPs:
         with torch.no_grad(), _exact():
             for j, model in enumerate(self.models):
                 post = model.posterior(X)
-                means.append(post.mean.squeeze(-1).numpy() * self.scale[j] + self.loc[j])
+                mu = post.mean.squeeze(-1).numpy() * self.scale[j] + self.loc[j]
                 v = post.variance.squeeze(-1).numpy() * self.scale[j] ** 2
-                vars_.append(v * self.cal[j] ** 2 if self.cal is not None else v)
+                for s in (self.cal, self.var_scale):
+                    if s is not None:
+                        v = v * s[j] ** 2
+                if self._log is not None and self._log[j]:  # lognormal moments
+                    mu, v = np.exp(mu + v / 2), np.expm1(v) * np.exp(2 * mu + v)
+                means.append(mu)
+                vars_.append(v)
         return np.column_stack(means), np.column_stack(vars_)
 
     def joint_cov(self, Xu: np.ndarray) -> list[np.ndarray]:

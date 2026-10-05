@@ -72,6 +72,7 @@ Details are in [docs/PLAN.md](docs/PLAN.md) and [docs/CostAwarePlan.md](docs/Cos
 | 7 | [`adaptive_iv_mf_ck`](docs/methods/adaptive_iv_mf_ck.md) | Co-kriging: per-config bias GP with a bias-aware cost-aware acquisition |
 | 7c | [`adaptive_iv_mf_ck_cal`](docs/methods/adaptive_iv_mf_ck_cal.md) | #7 + conformal-style LOO calibration of the error bars |
 | 7s | [`adaptive_iv_mf_cks`](docs/methods/adaptive_iv_mf_cks.md) | #7 with learned per-config σ scales, for tally errors under-reported by a factor |
+| 7s-x | [`adaptive_iv_mf_cks_*`](docs/methods/cks_variants.md) | Seven one-change calibration variants of #7s, under screening |
 
 The shared machinery (GP core, greedy batch acquisition) and a full results table are in [docs/methods/README.md](docs/methods/README.md).
 
@@ -139,6 +140,7 @@ Each worker process handles one run and then exits, so memory can't accumulate a
 | `dashdemo.toml` | Small live run for trying the dashboard |
 | `costaware.toml` | Baseline, #5b, #7, #7s on `toymc_axial`, `toymc`, `borehole_d30` (10 seeds). Cost-aware methods share a 5-worker pool |
 | `costaware_extra.toml` | #5 and #7c on `toymc_axial` (5 seeds) |
+| `calib_screen.toml` | #7s and its 7 calibration variants on `toymc_axial` and Borehole-30D (3 seeds) |
 
 ## Project layout
 

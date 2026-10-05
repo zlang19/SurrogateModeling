@@ -1,0 +1,25 @@
+# Calibration follow-up, stage 1 (screening): #7s and one-change variants, 3 seeds.
+# Scored by AUC-NRMSE, AUC-NCRPS and final coverage (gate >= 0.90). See CostAwarePlan.md.
+name = "calib_screen"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 10
+problems = ["toymc_axial", "borehole_d30"]
+methods = [
+  "adaptive_iv_mf_cks",
+  "adaptive_iv_mf_cks_pq",
+  "adaptive_iv_mf_cks_matern",
+  "adaptive_iv_mf_cks_pooled",
+  "adaptive_iv_mf_cks_log",
+  "adaptive_iv_mf_cks_wt",
+  "adaptive_iv_mf_cks_ens",
+  "adaptive_iv_mf_cks_warp",
+]
+
+[pools.costaware]
+methods = [
+  "adaptive_iv_mf_cks", "adaptive_iv_mf_cks_pq", "adaptive_iv_mf_cks_matern", "adaptive_iv_mf_cks_pooled",
+  "adaptive_iv_mf_cks_log", "adaptive_iv_mf_cks_wt", "adaptive_iv_mf_cks_ens", "adaptive_iv_mf_cks_warp",
+]
+workers = 8

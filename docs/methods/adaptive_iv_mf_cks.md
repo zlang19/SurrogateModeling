@@ -24,4 +24,4 @@ The adaptive methods rebuild their GPs every batch and copy the previous hyperpa
 
 ## Results
 - **Borehole test, cheapest config's σ under-reported 5×** (2 seeds, budget 60): it learned scales of 25.9 and 29.5 (truth 25), with NRMSE 0.024–0.027 and coverage 0.86–0.89. It used 318–615 runs, i.e. a mix of fidelities.
-- The 10-seed comparison is in the `costaware` experiment (see [README](README.md#results-so-far)).
+- **`costaware` (10 seeds):** mean rank 1.62 (tied with #7). On `toymc_axial`: k-eff **0.061** (#5b 0.130), capture/fission **0.067** (0.120), peaking 0.361 (best), axial offset 0.270 (baseline 0.216). It's the only method that mixes fidelities, with 13% of adaptive picks above the cheapest config. The learned σ scale for axial offset at the cheapest config is 11, about a third of the truth, so axial-offset coverage is still 0.53.

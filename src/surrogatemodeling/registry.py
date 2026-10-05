@@ -44,4 +44,12 @@ METHODS: dict[str, Callable[[], Method]] = {
     # #7 with a learned per-config multiplicative scale on reported sigma^2 (instead of
     # additive extra noise), for tally errors that are under-reported by a factor.
     "adaptive_iv_mf_cks": lambda: CoKrigingAdaptive(noise_scale=True),
+    # Calibration screening variants of #7s (CostAwarePlan.md, calibration follow-up): one change each.
+    "adaptive_iv_mf_cks_pq": lambda: CoKrigingAdaptive(noise_scale=True, prequential=True),
+    "adaptive_iv_mf_cks_matern": lambda: CoKrigingAdaptive(noise_scale=True, kernel="matern"),
+    "adaptive_iv_mf_cks_pooled": lambda: CoKrigingAdaptive(noise_scale=True, pooled_scale=True),
+    "adaptive_iv_mf_cks_log": lambda: CoKrigingAdaptive(noise_scale=True, log_outputs=True),
+    "adaptive_iv_mf_cks_wt": lambda: CoKrigingAdaptive(noise_scale=True, weighted=True),
+    "adaptive_iv_mf_cks_ens": lambda: CoKrigingAdaptive(noise_scale=True, ensemble=3),
+    "adaptive_iv_mf_cks_warp": lambda: CoKrigingAdaptive(noise_scale=True, warp=True),
 }

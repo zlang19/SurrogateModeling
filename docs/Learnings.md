@@ -59,6 +59,42 @@ From `studies/fidelity_characterization.py`: 1,204 OpenMC runs of a 2 m-tall 3×
   - Bias is *correlated*: many cheap runs near each other share one bias. Giving the acquisition a joint covariance over every (candidate, config) pair fixed this: **0.035–0.041 NRMSE, coverage 0.92–0.96**, with a genuine mix of high-fidelity and cheap runs.
 - **Bias at rarely used configs is poorly identified.** Its learned size there drifts large (about 5× the truth on the test problem), which makes the method conservative about those configs. That's safe, but it could waste options.
 
+## The `costaware` experiment (2026-10-04)
+
+Baseline, #5b, #7 and #7s × `toymc_axial`, `toymc`, Borehole-30D × 10 seeds, 120 runs. Mean rank by AUC-NRMSE: **#7s 1.62, #7 1.62, #5b 3.0, baseline 3.75.**
+
+**Final NRMSE (10-seed median):**
+
+| Problem / output | Baseline | #5b | #7 | #7s |
+|---|---|---|---|---|
+| borehole_d30 | 0.091 | 0.048 | 0.047 | 0.047 |
+| toymc k_eff | 0.099 | 0.064 | 0.063 | 0.064 |
+| toymc power_ratio | 0.155 | 0.108 | **0.097** | 0.118 |
+| toymc_axial k_eff | 0.139 | 0.130 | 0.085 | **0.061** |
+| toymc_axial capture/fission | 0.163 | 0.120 | 0.094 | **0.067** |
+| toymc_axial axial_offset | **0.216** | 0.318 | 0.311 | 0.270 |
+| toymc_axial axial_peaking | 0.389 | 0.396 | 0.395 | **0.361** |
+
+- **On unbiased menus (`toymc`, Borehole-30D) the new methods tie #5b.** All are about 2× better than the baseline, and all pick the cheapest config 100% of the time. When cheap runs are unbiased, the fidelity choice really is trivial.
+- **On the realistic biased menu (`toymc_axial`), modeling noise and bias pays off for the well-behaved outputs.** For k-eff and capture/fission, #7s is about **2×** better than #5b and the baseline.
+- **#7s is the only method that diversifies:** 13% of its adaptive picks are not the cheapest config, and it uses about 1,540 runs vs about 1,870.
+- **Axial offset is still unsolved.** Every cost-aware method loses to the high-fidelity baseline (0.27–0.32 vs 0.22).
+  - #7s learned a σ variance scale of **11** for the cheapest config's axial offset, where the toy's truth is about 34, so it corrected only about a third of the under-reporting.
+  - For peaking it learned a scale below 1 and attributed the error to bias instead.
+- **Calibration fails on `toymc_axial` for all cost-aware methods:**
+
+  | Output | Baseline coverage | Cost-aware coverage |
+  |---|---|---|
+  | axial offset | 0.87 | 0.46–0.53 |
+  | peaking | 0.89 | 0.58–0.68 |
+  | k-eff | 0.87 | 0.45 (#5b) – 0.80 (#7s) |
+
+  Axial-offset NLL is 5.5–10 vs −0.8. These models are **confidently wrong** where it matters most for a reactor, and no cost-aware method passes the planned 0.90 coverage gate there. #7s comes closest.
+- **Extra runs (5 seeds, `toymc_axial`):**
+  - **#5, trusting reported σ, is the worst** cost-aware method on the realistic menu: axial offset 0.443, peaking 0.537. It's worse than the baseline on 3 of 4 outputs.
+  - **#7c's LOO calibration barely moves coverage** (axial offset 0.486 → 0.500). In-sample leave-one-out residuals share the fitted model's optimism, so this calls for out-of-sample (next-batch) calibration instead.
+- **Against the plan's success bar** (beat #5b on the MCNP-like problems, with coverage at least as good): #7 and #7s meet it. #7s wins 7 of 8 outputs, losing only the toy MC power ratio, with better coverage on `toymc_axial`. But "as good as #5b" turns out to be a weak bar for calibration, and the calibration follow-up is now the priority.
+
 ## Methods
 
 - **PCE needs proper hybrid LARS.** The first version, which chose terms by cross-validated LASSO, overfit and picked inert inputs. Scoring the full LAR path by corrected leave-one-out error fixed it. Even so, PCE ranks last here: it's competitive only on smooth, low-dimensional, low-noise problems.
@@ -88,7 +124,7 @@ From `studies/fidelity_characterization.py`: 1,204 OpenMC runs of a 2 m-tall 3×
 
 ## Open questions
 
-1. **Fidelity choice under realistic overhead:** with OpenMC's measured cost shape and the 12-config cycle/particle menu (`toymc_axial`), which configs do #5, #5b and #7 actually choose, and does bias-aware co-kriging beat #5b there? (The `costaware` experiment.)
+1. **Axial offset under realistic fidelity.** Cost-aware methods still lose to high-fidelity-only sampling on axial offset, and are badly overconfident there. Is the fix better noise learning (a pooled scale per output), weighting the acquisition toward the weakest output, or just calibration? (The calibration follow-up in CostAwarePlan.md.)
 2. **SAAS:** does it close the padded-input gap at high fidelity? Its 70 runs are on hold, pending a decision on when to run them.
 3. **Multiplicative vs additive noise correction:** σ under-reporting is roughly a multiplicative factor, but #5b learns an *additive* term. A learned σ scale might be better on outputs whose noise varies strongly with fidelity.
 4. **Coverage:** can calibration be improved (e.g. by learning the noise model) without losing accuracy?

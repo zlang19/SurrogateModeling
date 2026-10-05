@@ -26,4 +26,4 @@ Same as #7, plus `calibration_scale` per output (1 = already calibrated).
 
 ## Results
 - **Biased Borehole test:** the scale came out at 1.02–1.05, because #7's error bars were already honest there. Coverage was 0.93–0.97, with accuracy identical to #7.
-- Its value should show on outputs whose σ is under-reported, such as `toymc_axial`'s axial offset. That's measured in the `costaware` experiment.
+- **`costaware` (5 seeds, `toymc_axial`):** accuracy identical to #7, as designed, but coverage barely moved (axial offset 0.486 → 0.500, k-eff 0.647 → 0.662). In-sample LOO residuals share the fitted hyperparameters' optimism, so they don't see the overconfidence. It's being replaced by next-batch (prequential) calibration, which uses each batch's out-of-sample errors (see [CostAwarePlan.md](../CostAwarePlan.md#calibration-follow-up-decided-2026-10-04-starts-after-costaware-finishes)).

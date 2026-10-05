@@ -72,7 +72,7 @@ The knobs are the slab's height and coupling and its default fidelity menu. A hi
 1. ✅ OpenMC model + pilot. The source settles in ~50 batches. HF is 10⁴ particles × (100 inactive + 200 active), about 6 CPU-min per run.
 2. ✅ Characterization study: 1,204 runs, 5.8 h, `results/openmc_fidelity/report.md`. Findings are in [Learnings](Learnings.md#fidelity-in-a-real-monte-carlo-code-openmc-study-2026-10-04).
 3. ✅ Interface v2 (fidelity menu), plus `toymc_axial`: a 1D twin of the OpenMC column calibrated to its patterns, with the same 12-config menu and the same cost shape. The original symmetric toy couldn't show axial-offset effects.
-4. ⏳ Follow-up (b): #5 and #5b on the realistic menu, run as the `costaware` experiment alongside #7 and #7c.
+4. ✅ Follow-up (b) + new methods, the `costaware` experiment (120 runs). #7s ≈ #7 > #5b > baseline by AUC-NRMSE. On `toymc_axial`, #7s is 2× better than #5b on k-eff and capture/fission, but **every cost-aware method loses to the baseline on axial offset and fails the coverage gate there**. Details are in [Learnings](Learnings.md#the-costaware-experiment-2026-10-04). Extra runs: #5 is the worst on the realistic menu, and #7c's LOO calibration barely moves coverage (0.486 → 0.500 on axial offset).
 5. ⏳ Triage and implement. Already built from the "In" rows:
    - **#7 `adaptive_iv_mf_ck`:** co-kriging with a bias-aware joint acquisition;
    - **#7c `adaptive_iv_mf_ck_cal`:** #7 plus closed-form LOO conformal calibration.
@@ -95,3 +95,49 @@ The knobs are the slab's height and coupling and its default fidelity menu. A hi
 
 ## Later: neural methods
 Test neural methods (MF-FNO, DeepONet, neural-network ensembles) once the GP-based work settles. They would likely use the GPU (RTX 3060, 12 GB) behind a per-method concurrency limit (`[limits]`), since one GPU can't serve 10 workers.
+
+## Calibration follow-up (decided 2026-10-04; starts after `costaware` finishes)
+
+**Problem:** every GP method drifts overconfident as data grows. In `full`, median coverage went 0.95 → 0.92 → 0.88–0.90 at cost 25 → 50 → 100, so real errors at full budget are about 1.2–1.27× the claimed error bars. The NRMSE leaders (cost-aware methods, padded problems) drift most. Likely causes:
+- plug-in hyperparameters (no hyperparameter uncertainty);
+- variance shrinking as σ²/n with many cheap points while structured error doesn't;
+- trusting reported σ;
+- the smoothness of the RBF kernel;
+- stale hyperparameters between refits.
+
+**Criteria (add, don't replace):**
+- Add **normalized CRPS** (CRPS ÷ the output's spread) as a per-batch metric, and **AUC-NCRPS** as a second ranked criterion next to AUC-NRMSE. It's a proper scoring rule, comparable across outputs, robust to single outliers, and reduces to MAE for methods without variance.
+- Add a **calibration gate** to the success bar: final coverage ≥ 0.90 on every output.
+- NLL and max error stay diagnostics.
+
+**Models:**
+1. **Next-batch (prequential) calibration** as an option for every GP method. Predict each incoming batch *before* training on it, keep a running set of those out-of-sample standardized residuals, and scale the error bars so they cover 95%. It replaces in-sample LOO (#7c), which shares the hyperparameters' optimism.
+2. **A Matérn-5/2 kernel** variant.
+3. **Hyperparameter uncertainty** (SAAS, on hold; or a small hyperparameter ensemble), if 1 and 2 aren't enough.
+
+**More model variants (added 2026-10-04).** All target the same accuracy-vs-calibration trade-off, so they're tested in the same experiment.
+
+*Tier 1: cheap, and motivated by results so far*
+| Variant | Evidence behind it |
+|---|---|
+| **Pooled σ scale**: one learned scale per output, shared across configs (a variant of #7s) | OpenMC showed under-reporting is a property of the *output* (axial offset ~4× at every setting), not of the knobs. Per-config scales are poorly identified for rarely used configs |
+| **Log-transform skewed positive outputs** (peaking, borehole flow, power ratio) | These are skewed and bounded below. A log-scale GP usually fits better and gives asymmetric, better-calibrated error bars |
+| **Weighting outputs in the acquisition**: weight each output's variance reduction by its current estimated error | Equal weights let k-eff and capture/fission dominate on `toymc_axial`, while axial offset lost to the baseline |
+| **Hyperparameter ensemble**: a few GPs from fit restarts or posterior samples, combined as a mixture | Plug-in hyperparameters are the leading suspect for the coverage drift. A cheap partial substitute for SAAS (on hold) |
+| **Input warping**: learned monotone per-input transforms (botorch `Warp`) | Rod insertion and zone boundaries make some responses non-stationary |
+
+*Tier 2: later, if Tier 1 leaves gaps*
+- **HIPE-style seed phase:** choose early points to pin down hyperparameters.
+- **Multi-output GP** across related outputs.
+- **Screening combined with cost-aware sampling.**
+
+*Tier 3: still gated*
+- Bandits, lookahead, cost-aware EPIG: the gate is partly met, since co-kriging now mixes fidelities, but these wait until results show the fidelity *choice*, rather than the noise model, is what limits accuracy.
+- SAAS + cost-aware: blocked by the SAAS hold.
+- Neural ensembles: deferred with the other neural methods.
+
+**Experiment (two stages):**
+1. **Screening:** each calibration option (next-batch calibration, Matérn) and each Tier 1 variant, on the leading cost-aware method, with **3 seeds** on `toymc_axial` and Borehole-30D. About 4–5 h with the 8-worker pool.
+2. **Confirmation:** promote the winners to **10 seeds** on the MCNP-like problems.
+
+Both stages are scored by AUC-NRMSE, AUC-NCRPS and final coverage (gate ≥ 0.90), with NLL and max error as diagnostics.

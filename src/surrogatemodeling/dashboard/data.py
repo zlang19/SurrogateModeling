@@ -23,7 +23,7 @@ from surrogatemodeling.report.plots import curves_on_grid
 
 STALE_S = 120.0  # heartbeat age after which a "running" run is considered dead
 GRID_POINTS = 80
-METRICS = ("nrmse", "coverage", "nll", "max_error")
+METRICS = ("nrmse", "ncrps", "coverage", "nll", "max_error")
 
 
 def pid_alive(pid: int | None) -> bool:

@@ -1,8 +1,8 @@
 # Evaluation criteria
 
 How methods are scored, and how to read the numbers.
-- **[Part 1](#part-1-the-four-metrics)** covers the **four metrics** computed after every batch of every run: NRMSE, coverage, NLL and max error.
-- **[Part 2](#part-2-the-ranking-report)** covers the **three tables** in each `ranking.md`, which summarize those metrics across seeds and budget.
+- **[Part 1](#part-1-the-five-metrics)** covers the **five metrics** computed after every batch of every run: NRMSE, NCRPS, coverage, NLL and max error. (NCRPS was added on 2026-10-04; runs from before then don't have it.)
+- **[Part 2](#part-2-the-ranking-report)** covers the **ranking report** (`ranking.md`): two ranked criteria, a calibration gate and supporting tables.
 - **[Part 3](#part-3-diagnosing-a-model-from-all-four)** shows how to diagnose a model by reading the metrics together.
 
 Code: [metrics.py](../src/surrogatemodeling/core/metrics.py), [ranking.py](../src/surrogatemodeling/report/ranking.py).
@@ -13,8 +13,8 @@ Every metric compares the method's predictions with **truth** on a fixed, cached
 - **Points:** 2,000 points drawn from the problem's **input distribution**, not uniformly over the training box. A plain average over these points is therefore an average weighted by how likely each input is, which is what matters when the surrogate is used for UQ.
 - **Truth:** noise-free for the analytic problems. For Monte Carlo problems it's a high-precision reference run (toy MC: 100× high-fidelity histories; `toymc_axial`: 10× particles and 2× inactive cycles).
 
-After every batch, the runner asks the method to `predict` all 2,000 points and records the four metrics **for each output**. They appear:
-- in each run's Parquet file, as `nrmse/<output>`, `coverage/<output>`, `nll/<output>` and `max_error/<output>`;
+After every batch, the runner asks the method to `predict` all 2,000 points and records the five metrics **for each output**. They appear:
+- in each run's Parquet file, as `nrmse/<output>`, `ncrps/<output>`, `coverage/<output>`, `nll/<output>` and `max_error/<output>`;
 - in the dashboard's **Metric** selector;
 - in the plots and ranking tables (NRMSE and coverage).
 
@@ -22,7 +22,7 @@ After every batch, the runner asks the method to `predict` all 2,000 points and 
 
 ---
 
-## Part 1: the four metrics
+## Part 1: the five metrics
 
 ### NRMSE: typical accuracy (*the primary metric*)
 
@@ -52,6 +52,24 @@ Because it's normalized, NRMSE is **comparable across outputs and problems**: 0.
 - **Higher than the baseline on one output only:** that output has a specific difficulty, e.g. axial offset with its 4× under-reported σ.
 
 **What it doesn't tell you:** whether errors are spread evenly or concentrated (see max error), or whether the model *knows* how wrong it is (see coverage and NLL).
+
+### NCRPS: accuracy and honesty, comparable everywhere (*second ranked metric*)
+
+```
+CRPS_i = σ_i · [ z_i·(2Φ(z_i) − 1) + 2φ(z_i) − 1/√π ],   z_i = (y_i − μ_i)/σ_i
+NCRPS  = mean_i CRPS_i / s_y
+```
+
+**What it measures:** the continuous ranked probability score, a *proper scoring rule* like NLL. It's lowest when the predictive distribution is both accurate and honestly uncertain. Inflating or shrinking the error bars can't improve it. Normalizing by s_y makes it **comparable across outputs and problems**, unlike NLL. It's also **robust**: a single overconfident point increases it linearly, not quadratically as with NLL.
+
+**Scale and reference points:**
+- It's in the same units as NRMSE (a fraction of the output's spread), but it's usually **smaller than NRMSE**. For honest Gaussian predictions it's about 0.56 × NRMSE (CRPS ≈ 0.57σ, versus RMSE = σ).
+- For a method **without** error bars (PCE), CRPS reduces to the mean absolute error, so those methods can still be ranked on it. They just get no credit for knowing their uncertainty.
+
+**How to interpret it for a model:**
+- **Better NCRPS rank than NRMSE rank:** its error bars are adding value, because it knows where it's uncertain.
+- **Worse NCRPS rank than NRMSE rank:** accurate on average, but its error bars are miscalibrated, usually overconfident. Check coverage.
+- It sums up the accuracy-vs-calibration trade-off in one comparable number, which is why it's the second ranked criterion.
 
 ### Coverage: are the error bars honest?
 
@@ -129,15 +147,17 @@ max_error = max_i |μ_i − y_i| / s_y
 
 ## Part 2: the ranking report
 
-`uv run sm report results/<experiment>` writes `ranking.md` and `ranking.csv`. Each table has one row per method and one column per (problem, output). Every run produces an error-vs-cost curve, with cost in high-fidelity-run equivalents, for each of its seeds (usually 10). The report condenses those curves into three criteria:
+`uv run sm report results/<experiment>` writes `ranking.md` and `ranking.csv`. Each table has one row per method and one column per (problem, output). Every run produces an error-vs-cost curve, with cost in high-fidelity-run equivalents, for each of its seeds (usually 10). The report condenses those curves into:
 
 | Criterion | Built from | Question it answers | Ranked? |
 |---|---|---|---|
-| [AUC-NRMSE](#1-auc-nrmse) | NRMSE over the whole budget | How accurate *across the budget*? | **Yes**: the mean rank |
+| [AUC-NRMSE](#1-auc-nrmse) | NRMSE over the whole budget | How accurate *across the budget*? | **Yes** |
+| **AUC-NCRPS** | NCRPS over the whole budget, built exactly like AUC-NRMSE | How good are its *predictive distributions* across the budget? | **Yes** (when recorded) |
+| **Calibration gate** | Final coverage | Is final coverage ≥ 0.90 on every output? | Pass/fail; the summary shows the share of outputs passing |
 | [Final NRMSE](#2-final-nrmse) | NRMSE at the end | How accurate *when the budget runs out*? | No |
 | [Final 95% coverage](#3-final-95-coverage) | Coverage at the end | Are the error bars *honest*? | No |
 
-NLL and max error aren't in the report tables. Use the run files or the dashboard's Metric selector for them.
+The summary at the top shows both mean ranks and the gate. A method is recommended only if it does well on **both** rankings and **passes the gate**. NLL and max error aren't in the report tables; use the run files or the dashboard's Metric selector for them.
 
 ### 1. AUC-NRMSE
 
@@ -205,4 +225,4 @@ This is where #5's under-reported-σ failure was most visible.
 | High, falling | ≈ 0.95 | — | — | **Honest and still learning:** more budget will help |
 | High, plateaued | ≈ 0.95 | — | — | **Model limit:** honest, but can't represent the function or is at the noise floor; try a more flexible model or more precise runs |
 
-The success bar for new methods in [CostAwarePlan.md](CostAwarePlan.md) uses these together: **beat #5b on the MCNP-like problems by AUC/final NRMSE, with coverage at least as good.** NLL breaks ties between equally covered methods, and max error flags anything unsafe for worst-case use.
+The success bar for new methods in [CostAwarePlan.md](CostAwarePlan.md) uses these together: **beat the current leader on the MCNP-like problems by AUC-NRMSE *and* AUC-NCRPS, and pass the calibration gate (final coverage ≥ 0.90 on every output).** NLL breaks ties between equally covered methods, and max error flags anything unsafe for worst-case use.

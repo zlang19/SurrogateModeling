@@ -4,10 +4,10 @@ name = "costaware"
 budget = 100
 batch_size = 5
 seeds = 5
-workers = 5
+workers = 8
 problems = ["toymc_axial"]
 methods = ["adaptive_iv_mf", "adaptive_iv_mf_ck_cal"]
 
 [pools.costaware]
 methods = ["adaptive_iv_mf", "adaptive_iv_mf_ck_cal"]
-workers = 5
+workers = 8

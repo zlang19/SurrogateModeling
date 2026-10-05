@@ -116,7 +116,7 @@ pre { background: var(--bg); border: 1px solid var(--border); border-radius: 6px
     <div class="row">
       <label>Metric
         <select id="metric">
-          <option value="nrmse">NRMSE</option><option value="coverage">95% coverage</option>
+          <option value="nrmse">NRMSE</option><option value="ncrps">NCRPS</option><option value="coverage">95% coverage</option>
           <option value="nll">NLL</option><option value="max_error">Max error</option>
         </select>
       </label>
@@ -248,8 +248,8 @@ function logTicks(values) {
     for (const m of [1, 2, 5]) { const t = m * 10 ** e; if (t >= lo / 1.5 && t <= hi * 1.5) ticks.push(t); }
   return { tickmode: "array", tickvals: ticks, ticktext: ticks.map((t) => Number(t.toPrecision(2)).toString()) };
 }
-const METRIC_LABEL = { nrmse: "NRMSE", coverage: "95% coverage", nll: "NLL", max_error: "Max error / std" };
-const logY = (m) => m === "nrmse" || m === "max_error";
+const METRIC_LABEL = { nrmse: "NRMSE", ncrps: "NCRPS", coverage: "95% coverage", nll: "NLL", max_error: "Max error / std" };
+const logY = (m) => m === "nrmse" || m === "ncrps" || m === "max_error";
 
 function tracesFor(curves) {
   const traces = [];

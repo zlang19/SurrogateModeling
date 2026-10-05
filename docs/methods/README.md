@@ -27,6 +27,7 @@ The runner asks for batches of 5 and stops when the budget (in high-fidelity run
 | 7 | `adaptive_iv_mf_ck` | Sobol seed → adaptive | Co-kriging: per-config bias GP + bias-aware joint acquisition | Chooses from menu | [adaptive_iv_mf_ck.md](adaptive_iv_mf_ck.md) |
 | 7c | `adaptive_iv_mf_ck_cal` | Sobol seed → adaptive | #7 + conformal-style LOO calibration | Chooses from menu | [adaptive_iv_mf_ck_cal.md](adaptive_iv_mf_ck_cal.md) |
 | 7s | `adaptive_iv_mf_cks` | Sobol seed → adaptive | #7 with learned per-config σ scales (multiplicative) | Chooses from menu | [adaptive_iv_mf_cks.md](adaptive_iv_mf_cks.md) |
+| 7s-x | `adaptive_iv_mf_cks_{pq,matern,pooled,log,wt,ens,warp}` | Sobol seed → adaptive | #7s with one calibration change each (screening) | Chooses from menu | [cks_variants.md](cks_variants.md) |
 
 The registry order in [registry.py](../../src/surrogatemodeling/registry.py) also fixes each method's color in plots and the dashboard.
 

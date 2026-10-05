@@ -38,10 +38,28 @@ def nll(pred: Prediction, Y: np.ndarray) -> np.ndarray:
     return np.mean(0.5 * (np.log(2 * np.pi * var) + (pred.mean - Y) ** 2 / var), axis=0)
 
 
+def ncrps(pred: Prediction, Y: np.ndarray) -> np.ndarray:
+    """Mean continuous ranked probability score, normalized by the truth's std.
+
+    A proper scoring rule: rewards predictions that are accurate *and* honestly uncertain,
+    can't be improved by inflating or shrinking the error bars, and (unlike NLL) is
+    comparable across outputs and robust to a single overconfident point. Gaussian closed
+    form; without a variance it reduces to the mean absolute error.
+    """
+    err = Y - pred.mean
+    if pred.var is None:
+        crps = np.abs(err)
+    else:
+        sd = np.sqrt(np.maximum(pred.var, 1e-300))
+        z = err / sd
+        crps = sd * (z * (2 * stats.norm.cdf(z) - 1) + 2 * stats.norm.pdf(z) - 1 / np.sqrt(np.pi))
+    return np.mean(crps, axis=0) / np.std(Y, axis=0)
+
+
 def all_metrics(pred: Prediction, Y: np.ndarray, output_names: list[str]) -> dict[str, float]:
     """Flat {'<metric>/<output>': value} dict for one evaluation."""
     out = {}
-    for metric in (nrmse, max_error, coverage, nll):
+    for metric in (nrmse, max_error, coverage, nll, ncrps):
         for name, v in zip(output_names, metric(pred, Y), strict=True):
             out[f"{metric.__name__}/{name}"] = float(v)
     return out

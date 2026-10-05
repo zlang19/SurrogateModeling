@@ -58,6 +58,7 @@ def greedy_batch(
     cost_aware: bool = False,
     target_tau2: np.ndarray | None = None,
     scores_out: list[float] | None = None,
+    output_weights: np.ndarray | None = None,
 ) -> list[tuple[int, int]]:
     """Choose up to k (candidate, fidelity-option) pairs.
 
@@ -66,18 +67,20 @@ def greedy_batch(
     costs: (F,) cost of each fidelity option, or (F, C) for a cost per candidate row
     target_tau2: (m,) noise on EPIG's targets y*; ignored by "iv"
     scores_out: if given, the winning score of each pick is appended to it
+    output_weights: (m,) multiplies each output's score (default: equal weights)
     """
     fn = SCORES[score]
     n_cand = tau2.shape[2]
     costs = np.broadcast_to(np.asarray(costs, dtype=float).reshape(len(costs), -1), (len(costs), n_cand))
     K = [c.copy() for c in covs]
     target = np.zeros(len(K)) if target_tau2 is None else target_tau2
+    w = np.ones(len(K)) if output_weights is None else np.asarray(output_weights, dtype=float)
     chosen = []
     for _ in range(k):
         affordable = costs <= budget + 1e-9
         if not affordable.any():
             break
-        total = sum(np.stack([fn(K[o], n_ref, tau2[o, f], target[o]) for f in range(len(costs))]) for o in range(len(K)))
+        total = sum(w[o] * np.stack([fn(K[o], n_ref, tau2[o, f], target[o]) for f in range(len(costs))]) for o in range(len(K)))
         if cost_aware:
             total = total / costs
         total[~affordable] = -np.inf
