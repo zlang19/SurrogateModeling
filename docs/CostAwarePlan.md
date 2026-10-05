@@ -126,6 +126,19 @@ Test neural methods (MF-FNO, DeepONet, neural-network ensembles) once the GP-bas
 | **Hyperparameter ensemble**: a few GPs from fit restarts or posterior samples, combined as a mixture | Plug-in hyperparameters are the leading suspect for the coverage drift. A cheap partial substitute for SAAS (on hold) |
 | **Input warping**: learned monotone per-input transforms (botorch `Warp`) | Rod insertion and zone boundaries make some responses non-stationary |
 
+*Tier 1.5: combinations of the Tier 1 winners (added 2026-10-04)*
+
+If several variants help on their own in screening, test their combinations with a small **factorial design** rather than stacking everything:
+
+- **`pq`** (next-batch calibration) is a layer on top of any model, since it only rescales the error bars using held-out residuals. It should combine cleanly; if it wins alone, every final candidate includes it.
+- **`matern` and `warp`** both target kernel misspecification (roughness vs non-stationarity). They may help each other or be redundant, and warping adds ~2 hyperparameters per input (~50 for 25 inputs), which risks overfitting.
+- **`pooled`, `log`, `wt`** join the factorial only if they win on their own.
+- **`ens`** costs ~3× per fit, so it's added last, to the best combination, and only if calibration is still short of the gate.
+
+For winners {pq, matern, warp}: screening already covers 4 of the 2³ = 8 arms (base and each one alone), so only **4 new arms** are needed: `pq+matern`, `pq+warp`, `matern+warp` and `pq+matern+warp`. At 3 seeds on `toymc_axial` and Borehole-30D that's 24 runs, about 3 h. It measures whether the effects add up or interact.
+
+**Reading noisy 3-seed results:** all arms share seeds, so they share initial designs and simulator noise. Compare arms **paired by seed**, and call an effect real only if it's consistent across both problems and across outputs, especially axial offset.
+
 *Tier 2: later, if Tier 1 leaves gaps*
 - **HIPE-style seed phase:** choose early points to pin down hyperparameters.
 - **Multi-output GP** across related outputs.
@@ -136,8 +149,9 @@ Test neural methods (MF-FNO, DeepONet, neural-network ensembles) once the GP-bas
 - SAAS + cost-aware: blocked by the SAAS hold.
 - Neural ensembles: deferred with the other neural methods.
 
-**Experiment (two stages):**
-1. **Screening:** each calibration option (next-batch calibration, Matérn) and each Tier 1 variant, on the leading cost-aware method, with **3 seeds** on `toymc_axial` and Borehole-30D. About 4–5 h with the 8-worker pool.
-2. **Confirmation:** promote the winners to **10 seeds** on the MCNP-like problems.
+**Experiment (three stages):**
+1. **Screening** (`calib_screen.toml`, running): each calibration option and each Tier 1 variant on the leading cost-aware method (#7s), with **3 seeds** on `toymc_axial` and Borehole-30D. About 4–5 h with the 8-worker pool.
+2. **Combinations** (Tier 1.5): a factorial over the screening winners, 3 seeds, compared paired by seed.
+3. **Confirmation:** the best one or two combinations against the base, at **10 seeds** on the MCNP-like problems.
 
-Both stages are scored by AUC-NRMSE, AUC-NCRPS and final coverage (gate ≥ 0.90), with NLL and max error as diagnostics.
+All stages are scored by AUC-NRMSE, AUC-NCRPS and final coverage (gate ≥ 0.90), with NLL and max error as diagnostics.

@@ -18,7 +18,15 @@ Code: options of `CoKrigingAdaptive` / `CoKrigingGPs` in [cokriging.py](../../sr
 - `prequential_scale`: per output, the sd multiplier. 1 means already calibrated; 2 means real errors are twice the claimed ones.
 - `output_weights`: per output, the acquisition weight (mean 1).
 
+## Combining variants (Tier 1.5)
+If several variants win on their own, their combinations are tested with a small factorial design rather than stacked blindly:
+- **`pq` composes cleanly.** It rescales error bars from held-out residuals on top of any model.
+- **`matern` and `warp` may interact.** Both target kernel misspecification, and warping adds ~50 hyperparameters for 25 inputs.
+- **`ens` is added last.** At ~3× the fit cost, it goes onto the best combination only if coverage is still short.
+
+For {pq, matern, warp}, only 4 new arms are needed beyond screening (`pq+matern`, `pq+warp`, `matern+warp`, all three). Arms are compared paired by seed. See [CostAwarePlan.md](../CostAwarePlan.md#calibration-follow-up-decided-2026-10-04-starts-after-costaware-finishes).
+
 ## Screening experiment
-`configs/experiments/calib_screen.toml`: the base and all 7 variants × `toymc_axial` and Borehole-30D × 3 seeds, all in one 8-worker pool. They're scored by AUC-NRMSE, AUC-NCRPS and final coverage against the 0.90 gate ([EvaluationCriteria.md](../EvaluationCriteria.md)). The winners go to a 10-seed confirmation run.
+`configs/experiments/calib_screen.toml`: the base and all 7 variants × `toymc_axial` and Borehole-30D × 3 seeds, all in one 8-worker pool. They're scored by AUC-NRMSE, AUC-NCRPS and final coverage against the 0.90 gate ([EvaluationCriteria.md](../EvaluationCriteria.md)). Winners go to the combination stage (above), then the best one or two combinations go to a 10-seed confirmation run.
 
 **Sanity check** (Borehole, honest σ, 1 seed): every variant ran. `_pq` found a scale of 1.00, i.e. nothing to fix, and `_wt` matched the base exactly, as it must with a single output.
