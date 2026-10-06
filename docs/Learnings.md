@@ -95,6 +95,21 @@ Baseline, #5b, #7 and #7s × `toymc_axial`, `toymc`, Borehole-30D × 10 seeds, 1
   - **#7c's LOO calibration barely moves coverage** (axial offset 0.486 → 0.500). In-sample leave-one-out residuals share the fitted model's optimism, so this calls for out-of-sample (next-batch) calibration instead.
 - **Against the plan's success bar** (beat #5b on the MCNP-like problems, with coverage at least as good): #7 and #7s meet it. #7s wins 7 of 8 outputs, losing only the toy MC power ratio, with better coverage on `toymc_axial`. But "as good as #5b" turns out to be a weak bar for calibration, and the calibration follow-up is now the priority.
 
+## SAAS and the Pareto view (2026-10-05)
+
+- **SAAS beats the plain GP at the same high-fidelity budget on every output and is much better calibrated.** Same 3 seeds:
+  - final NRMSE: Borehole-30D 0.074 vs 0.086; toy MC power ratio 0.136 vs 0.162; `toymc_axial` k-eff 0.124 vs 0.142, peaking 0.382 vs 0.407;
+  - coverage 0.89–0.97 vs 0.81–0.93.
+
+  Averaging over hyperparameters fixes much of the overconfidence that plug-in GPs show. It costs 5–20 min per run vs 0.2–7 min for the baseline.
+- **It can't match the cost-aware methods on smooth outputs** (k-eff, capture/fission: 0.12–0.16 vs 0.05–0.07), which get ~15× more (cheap) data points.
+- **On axial offset, high-fidelity sampling (plain GP or SAAS) remains as good as anything over the whole budget.** On AUC-NCRPS, the 7-minute baseline is the *only* Pareto-optimal method for axial offset (`results/all_ncrps/pareto_toymc_axial.png`). Cost-aware methods only catch up late (full warp: 0.177 final). For a budget that may end early, the plain approach is the safe choice for the hardest output.
+- **Pareto summary (AUC-NCRPS vs run time, `toymc_axial`):**
+  - k-eff / capture/fission: frontier = baseline → SAAS → `pooled` / `matern` / `log` (~1.5–2 h).
+  - peaking: baseline → `pooled` → `pq_matern`.
+  - **Every warping arm is dominated** over the whole budget (slow, and poor early), even though full warp has the best *final* numbers.
+- **Delayed warping failed on the hard problem.** It stalled k-eff at 0.12 (vs 0.06) after switching on, most likely the warm-start trap again. Warping looks powerful only when fitted cold, with enough data, and at full cost.
+
 ## Methods
 
 - **PCE needs proper hybrid LARS.** The first version, which chose terms by cross-validated LASSO, overfit and picked inert inputs. Scoring the full LAR path by corrected leave-one-out error fixed it. Even so, PCE ranks last here: it's competitive only on smooth, low-dimensional, low-noise problems.
@@ -115,12 +130,22 @@ Baseline, #5b, #7 and #7s × `toymc_axial`, `toymc`, Borehole-30D × 10 seeds, 1
 - **JAX recompiles for every new data size.** SAAS reached about 6 GB per run from cached compiled NUTS kernels. Calling `jax.clear_caches()` once per fit brought the peak to about 3 GB. Calling it once per *output* made runs slower, because outputs share a compile.
 - **Memory-heavy methods need a concurrency limit.** `[limits] sobol_saas = 3` gives such a method its own process pool. Even at 3 GB each, SAAS runs take about 20 min, roughly 4 h for 70 runs on 6 workers, so they're split into their own config (`full_saas.toml`).
 - **gpytorch's iterative solvers made long GP runs grow to 6–7 GB.** Above 800 points, gpytorch switches from Cholesky to CG/Lanczos. Cost-aware runs on `toymc_axial` reach about 2,000 points, grew to 6–7 GB each, and systemd-oomd killed the experiment. That was the memory cap working as intended: VS Code survived. Forcing exact Cholesky (`max_cholesky_size`) kept a run flat at about 1 GB at n = 875 (2 GB before) and was slightly faster. Glibc allocator tuning made no difference, so it wasn't fragmentation.
+- **Warm-starting full refits is a big, mostly free speed-up, except for unstable parameterizations.** Starting each full refit from the previous optimum made #7s 2.8× faster with identical results. But a model with input warping from the very first (25-point) fit got stuck in a bad optimum (NRMSE 0.36 vs 0.05). Path-dependent fitting needs the early fits to be sane, so delay complex model components until there's enough data.
+- **Count the optimizer's work, not just the parameters.** Warping doubled the hyperparameters but made each fit about 10× slower, because the optimizer needed 10× more steps.
 - **Warm starts must include every trainable piece.** Hyperparameters copied between full refits initially left out a new noise-scale module. It silently reset each batch, so learned σ scales read 0.9 instead of 25.
 - **Test fixtures can trigger expensive builds.** A test that builds every registered problem's test set tried to build `toymc_axial`'s 2-hour truth set inside pytest's temporary cache.
 - **Use spawn, not fork, for workers.** torch autograd state doesn't survive `fork`.
 - **Pin each worker to one thread** (torch and XLA flags). Ten workers each starting their own thread pool oversubscribe 12 cores.
 - **Standardize with ddof=1** to match botorch's input check. Otherwise every early fit emits a warning.
 - **Write results atomically** (`.tmp` then rename) and **skip runs that already finished**, so any interruption costs only the runs in flight.
+
+## Converged-source menu (2026-10-06)
+
+- **Never cut cycles; cut only particles.** Restricting the cost-aware menu to configs with high-fidelity inactive and active cycles (`pq_matern_safe`) turned the worst output into the best one. Axial offset final NRMSE fell from 0.287 to 0.144 (baseline 0.179), and coverage rose from 0.72 to 0.97. It won all 12 seed × output pairs against the full menu. Unconverged sources bias the slow axial mode in a way the bias GP can't learn, so the extra cheap points were costing more in bias than they gave in noise reduction.
+- **Fewer points is also faster:** ~620 evaluations instead of ~1,600 at the same budget, so 25 min per run instead of 125.
+- **A Matérn kernel fixes most of the baseline's overconfidence** (`sobol_gp_matern`: coverage 0.90–0.96 vs 0.81–0.90) at no cost in accuracy.
+- **A bigger high-fidelity seed design hurts** (50%: k-eff 0.101 vs 0.059). The budget is better spent on cheap runs.
+- Full report and validation ranking: [ValidationRecommendation.md](ValidationRecommendation.md).
 
 ## Open questions
 

@@ -89,3 +89,14 @@ A simple dashboard that live reports the cost vs accuracy plots and the progress
 - Log axes use explicit 1-2-5 ticks. Plotly's toolbar is hidden; drag still zooms and double-click resets.
 - Deep links: `?exp=<name>` selects an experiment, and `#run=<run id>` opens that run's detail drawer.
 - Run detail colors the outputs with the first palette slots, since those series are outputs, not methods.
+- **Robust y-axes (2026-10-05).** Extreme values in a few runs, e.g. NLL in the thousands from the warping variants, had flattened whole panels.
+  - Log-scale metrics use the 1st–99th percentile of the medians and IQR bands.
+  - Linear metrics (NLL, coverage) use a Tukey fence over the *later half* of the cost range only, so early transients are clipped rather than setting the axis.
+  - Individual seed lines never set the range, and a "some values outside range" note marks clipped panels.
+  - The static report plots use the same percentile rule.
+  - `?metric=<name>` opens the page on a given metric.
+- **"All (since NCRPS)" virtual experiment (2026-10-05).** It's the first entry in the selector, with id `_all`.
+  - It merges every run from experiments that recorded NCRPS, so methods from different trials share panels, e.g. SAAS next to the cost-aware arms.
+  - Run ids become `<experiment>::<run>`, and the run table gains an Experiment column.
+  - Where a (problem, method, seed) appears in several experiments, the newest wins. Runs with only pre-NCRPS data are excluded.
+  - With more than 8 methods, palette colors repeat. Use the legend chips to hide methods when comparing.

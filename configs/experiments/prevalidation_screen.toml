@@ -1,0 +1,23 @@
+# Pre-validation screening (2026-10-06): converged-source menu, Matérn HF baseline, 50% HF seed,
+# plus the HF baseline and SAAS as same-seed references. 3 seeds, written into calib_screen to pair
+# by seed with pq_matern and the earlier arms.
+name = "calib_screen"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 10
+problems = ["toymc_axial", "borehole_d30"]
+methods = [
+  "adaptive_iv_mf_cks_pq_matern_safe",
+  "adaptive_iv_mf_cks_pq_matern_seed50",
+  "sobol_gp_matern",
+  "sobol_gp",
+  "sobol_saas",
+]
+
+[pools.costaware]
+methods = ["adaptive_iv_mf_cks_pq_matern_safe", "adaptive_iv_mf_cks_pq_matern_seed50"]
+workers = 6
+
+[limits]
+sobol_saas = 2

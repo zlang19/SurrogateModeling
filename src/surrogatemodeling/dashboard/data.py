@@ -21,6 +21,8 @@ import pandas as pd
 from surrogatemodeling.registry import METHODS
 from surrogatemodeling.report.plots import curves_on_grid
 
+ALL = "_all"  # virtual experiment: every run that recorded NCRPS, across experiments
+ALL_LABEL = "All (since NCRPS)"
 STALE_S = 120.0  # heartbeat age after which a "running" run is considered dead
 GRID_POINTS = 80
 METRICS = ("nrmse", "ncrps", "coverage", "nll", "max_error")
@@ -133,13 +135,61 @@ class Store:
             raise ValueError(f"no experiment {name!r}")
         return path
 
+    def _experiment_dirs(self) -> list[Path]:
+        return sorted(p for p in self.results.iterdir() if p.is_dir() and ((p / "runs").is_dir() or (p / "live").is_dir()))
+
     def experiments(self) -> list[dict]:
         out = []
-        for d in sorted(p for p in self.results.iterdir() if p.is_dir() and ((p / "runs").is_dir() or (p / "live").is_dir())):
+        for d in self._experiment_dirs():
             manifests = [self._cached(m, lambda p: json.loads(p.read_text())) for m in sorted((d / "live" / "manifests").glob("*.json"))]
             live = any(m and pid_alive(m.get("pid")) for m in manifests)
             out.append({"name": d.name, "live": live, "done": len(list((d / "runs").glob("*.parquet")))})
+        included = [e for e in out if self._has_ncrps(self.results / e["name"])]
+        if included:
+            out.insert(0, {"name": ALL, "label": ALL_LABEL, "live": any(e["live"] for e in included),
+                           "done": sum(e["done"] for e in included), "experiments": [e["name"] for e in included]})
         return out
+
+    def _has_ncrps(self, d: Path) -> bool:
+        """Whether an experiment has any run recorded after NCRPS was added (finished or live)."""
+        for p in list((d / "runs").glob("*.parquet"))[:1]:
+            df = self._cached(p, pd.read_parquet)
+            if df is not None and any(c.startswith("ncrps/") for c in df.columns):
+                return True
+        for p in (d / "live").glob("*.jsonl"):
+            df = self._cached(p, self._read_jsonl)
+            if df is not None and any(c.startswith("ncrps/") for c in df.columns):
+                return True
+        return False
+
+    def snapshot_all(self) -> Snapshot:
+        """Union of every NCRPS-era run across experiments. Run ids become '<experiment>::<run>'.
+        If the same (problem, method, seed) exists in several experiments, the newest one wins."""
+        dirs = sorted((d for d in self._experiment_dirs() if self._has_ncrps(d)), key=lambda d: d.stat().st_mtime, reverse=True)
+        rows, runs, manifests, seen = [], [], [], set()
+        for d in dirs:
+            snap = self.snapshot(d.name)
+            has = any(c.startswith("ncrps/") for c in snap.rows) if not snap.rows.empty else False
+            r = snap.rows[snap.rows.filter(like="ncrps/").notna().any(axis=1)] if has else snap.rows.iloc[0:0]
+            run_keys = set(map(tuple, snap.runs[["problem", "method", "seed"]].to_numpy().tolist())) if len(snap.runs) else set()
+            pre_ncrps = set(map(tuple, snap.rows[["problem", "method", "seed"]].drop_duplicates().to_numpy().tolist())) if not snap.rows.empty else set()
+            pre_ncrps -= set(map(tuple, r[["problem", "method", "seed"]].drop_duplicates().to_numpy().tolist())) if len(r) else set()
+            keys = (run_keys - pre_ncrps) - seen  # queued/running runs too; drop runs that only have pre-NCRPS data
+            if not keys:
+                continue
+            seen |= keys
+            mask = [tuple(k) in keys for k in r[["problem", "method", "seed"]].to_numpy().tolist()]
+            if len(r):
+                rows.append(r[mask].assign(experiment=d.name))
+            rt = snap.runs[[(p, m, s) in keys for p, m, s in snap.runs[["problem", "method", "seed"]].to_numpy().tolist()]]
+            runs.append(rt.assign(experiment=d.name, run=d.name + "::" + rt["run"]))
+            manifests += snap.manifests
+        now = time.time()
+        return Snapshot(
+            rows=pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(),
+            runs=pd.concat(runs, ignore_index=True) if runs else pd.DataFrame(),
+            manifests=manifests, now=now,
+        )
 
     # --- snapshot --------------------------------------------------------------------------
 
@@ -368,12 +418,15 @@ def curves(
 
 
 def run_detail(snap: Snapshot, rid: str) -> dict:
-    problem, method, seed = parse_run_id(rid)
+    problem, method, seed = parse_run_id(rid.split("::")[-1])
     rows = snap.rows
     if rows.empty:
         r = rows
     else:
-        r = rows[(rows["problem"] == problem) & (rows["method"] == method) & (rows["seed"] == seed)].sort_values("cost")
+        r = rows[(rows["problem"] == problem) & (rows["method"] == method) & (rows["seed"] == seed)]
+        if "::" in rid and "experiment" in r:  # combined view: rows from that experiment only
+            r = r[r["experiment"] == rid.split("::")[0]]
+        r = r.sort_values("cost")
     info = snap.runs[snap.runs["run"] == rid]
     diagnostics = []
     if "diagnostics" in r:

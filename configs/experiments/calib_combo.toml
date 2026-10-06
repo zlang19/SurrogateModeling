@@ -1,0 +1,23 @@
+# Calibration follow-up, stage 2 (Tier 1.5): factorial over the screening winners {pq, matern, warp},
+# plus all three with a pooled sigma scale. 3 seeds, same problems as screening, compared paired by seed
+# against calib_screen's base and single-variant arms.
+name = "calib_screen"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 10
+problems = ["toymc_axial", "borehole_d30"]
+methods = [
+  "adaptive_iv_mf_cks_pq_matern",
+  "adaptive_iv_mf_cks_pq_warp",
+  "adaptive_iv_mf_cks_matern_warp",
+  "adaptive_iv_mf_cks_pq_matern_warp",
+  "adaptive_iv_mf_cks_pq_matern_warp_pooled",
+]
+
+[pools.costaware]
+methods = [
+  "adaptive_iv_mf_cks_pq_matern", "adaptive_iv_mf_cks_pq_warp", "adaptive_iv_mf_cks_matern_warp",
+  "adaptive_iv_mf_cks_pq_matern_warp", "adaptive_iv_mf_cks_pq_matern_warp_pooled",
+]
+workers = 8

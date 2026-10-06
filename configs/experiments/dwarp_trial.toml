@@ -1,0 +1,13 @@
+# Delayed top-8 warp (pq_matern_dwarp) trial, 3 seeds. Written into results/calib_screen so it pairs
+# by seed with that experiment's pq_matern / pq_matern_warp arms (same seeds -> same seed designs).
+name = "calib_screen"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 6
+problems = ["toymc_axial", "borehole_d30"]
+methods = ["adaptive_iv_mf_cks_pq_matern_dwarp"]
+
+[pools.costaware]
+methods = ["adaptive_iv_mf_cks_pq_matern_dwarp"]
+workers = 6

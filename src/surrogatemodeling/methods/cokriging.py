@@ -100,11 +100,13 @@ class CoKrigingGPs(IndependentGPs):
 
     def __init__(self, n_configs: int, hf: int, extra_noise: bool = True, refit_growth: float = 1.2,
                  calibrate: bool = False, noise_scale: bool = False, pooled_scale: bool = False,
-                 kernel: str = "rbf", warp: bool = False, log_outputs: bool = False, jitter_seed: int | None = None):
+                 kernel: str = "rbf", warp: bool = False, log_outputs: bool = False, jitter_seed: int | None = None,
+                 warm_start: bool = True):
         super().__init__(extra_noise=extra_noise and not noise_scale, refit_growth=refit_growth, calibrate=calibrate,
-                         log_outputs=log_outputs, jitter_seed=jitter_seed)
+                         log_outputs=log_outputs, jitter_seed=jitter_seed, warm_start=warm_start)
         self.n_configs, self.hf, self.noise_scale = n_configs, hf, noise_scale
         self.pooled_scale, self.kernel, self.warp = pooled_scale, kernel, warp
+        self.warp_dims: list[int] | None = None  # warp only these input columns; None = all
 
     def _make_model(self, X, y, v):
         if not self.noise_scale:
@@ -117,7 +119,8 @@ class CoKrigingGPs(IndependentGPs):
     def _input_transform(self, D: int):
         if not self.warp:
             return None
-        return Warp(d=D, indices=list(range(D - 1)))  # learned Kumaraswamy CDF per input; not the config column
+        dims = self.warp_dims if self.warp_dims is not None else list(range(D - 1))  # never the config column
+        return Warp(d=D, indices=list(dims))  # learned Kumaraswamy CDF per warped input
 
     def noise_scales(self) -> np.ndarray | None:
         """(m, n_configs) learned multiplier on reported variance, if enabled."""
@@ -140,7 +143,9 @@ class CoKrigingGPs(IndependentGPs):
 
 PQ_WINDOW = 300  # most recent out-of-sample residuals used for prequential calibration / weights
 PQ_MIN = 20
-_PQ_GRID = np.geomspace(0.5, 10.0, 200)
+# Prequential scale only ever widens error bars: screening showed shrinking hurt coverage when
+# residuals are noise-dominated (Borehole-30D: 0.83 -> 0.77), where the scale is poorly identified.
+_PQ_GRID = np.geomspace(1.0, 10.0, 200)
 
 
 class CoKrigingAdaptive(AdaptiveGP):
@@ -152,6 +157,11 @@ class CoKrigingAdaptive(AdaptiveGP):
     warp          learned input warping
     log_outputs   model positive outputs on the log scale
     ensemble      number of GPs (>1: extra members start from jittered hyperparameters; predictions mix)
+    warp_after    delayed warping: off until the data has this many points, then warp only the
+                  `warp_top_k` most relevant inputs (by ARD) and force a full refit
+    safe_menu     only buy configs that cut *particles* (inactive and active cycles at their HF
+                  values): converged sources, little bias, near-proportional cost
+    seed_fraction share of the budget spent on the HF Sobol seed (default 0.25)
     prequential   scale predictive sd so recent *out-of-sample* residuals (each batch predicted before
                   training on it) cover 95%
     weighted      weight each output's variance reduction by its estimated error (from those residuals)
@@ -159,8 +169,11 @@ class CoKrigingAdaptive(AdaptiveGP):
 
     def __init__(self, calibrate: bool = False, noise_scale: bool = False, pooled_scale: bool = False,
                  kernel: str = "rbf", warp: bool = False, log_outputs: bool = False, ensemble: int = 1,
-                 prequential: bool = False, weighted: bool = False):
-        super().__init__(score="iv", cost_aware=True, extra_noise=not noise_scale)
+                 prequential: bool = False, weighted: bool = False, warp_after: int | None = None,
+                 warp_top_k: int = 8, safe_menu: bool = False, seed_fraction: float = 0.25):
+        super().__init__(score="iv", cost_aware=True, extra_noise=not noise_scale, seed_fraction=seed_fraction)
+        self.safe_menu = safe_menu
+        self.warp_after, self.warp_top_k = warp_after, warp_top_k
         self.calibrate, self.noise_scale, self.pooled_scale = calibrate, noise_scale, pooled_scale
         self.kernel, self.warp, self.log_outputs = kernel, warp, log_outputs
         self.ensemble, self.prequential, self.weighted = ensemble, prequential, weighted
@@ -169,9 +182,19 @@ class CoKrigingAdaptive(AdaptiveGP):
         super().setup(spec, budget, rng)
         make = lambda seed: CoKrigingGPs(
             len(spec.fidelities), spec.hf, calibrate=self.calibrate, noise_scale=self.noise_scale,
-            pooled_scale=self.pooled_scale, kernel=self.kernel, warp=self.warp, log_outputs=self.log_outputs,
+            pooled_scale=self.pooled_scale, kernel=self.kernel, warp=self.warp and self.warp_after is None,
+            log_outputs=self.log_outputs,
             jitter_seed=seed,
+            # Full warping from the 25-point seed gets trapped when warm-started (Borehole-30D:
+            # NRMSE 0.36 vs 0.05 cold); delayed warping and unwarped models are safe and 1.6-2.8x faster.
+            warm_start=not (self.warp and self.warp_after is None),
         )
+        if self.safe_menu:
+            hf = spec.fidelities[spec.hf].knobs
+            keep = [i for i, f in enumerate(spec.fidelities)
+                    if all(f.knobs.get(k, hf[k]) == hf[k] for k in ("inactive", "active") if k in hf)]
+            self.options = np.array(keep)
+            self.costs = np.array([spec.cost(i) for i in self.options])
         self.members = [make(None)] + [make(int(rng.integers(2**31))) for _ in range(self.ensemble - 1)]
         self.gp = self.members[0]  # drives the acquisition
         self._resid: list[tuple[np.ndarray, np.ndarray, np.ndarray]] = []  # (r, v_latent, tau2) per point
@@ -180,6 +203,15 @@ class CoKrigingAdaptive(AdaptiveGP):
 
     def _fit(self, U: np.ndarray) -> None:
         Xc = np.column_stack([U, self.data.fidelity])
+        if self.warp and self.warp_after is not None and not self.gp.warp and len(U) >= self.warp_after and self.gp.models:
+            # Enough data to warp: pick the most relevant inputs from the current ARD fit.
+            rel = self.gp.inverse_lengthscales_sq()
+            share = (rel / rel.sum(axis=1, keepdims=True)).max(axis=0)
+            dims = sorted(np.argsort(-share)[: self.warp_top_k].tolist())
+            for gp in self.members:
+                gp.warp, gp.warp_dims = True, dims
+                gp._n_at_full_fit = 0  # force a full refit with the warp in place
+            self.warp_on_at = len(U)
         for gp in self.members:
             gp.fit(Xc, self.data.y, self.data.var)
 
@@ -270,6 +302,10 @@ class CoKrigingAdaptive(AdaptiveGP):
         scales = self.gp.noise_scales() if self.gp.models else None
         if scales is not None:
             d["noise_scale"] = {o: dict(zip(names, map(float, row), strict=True)) for o, row in zip(self.spec.output_names, scales)}
+        if self.warp and self.warp_after is not None:
+            inputs = self.spec.dist.names
+            d["warp"] = {"on": bool(self.gp.warp), "at_n": getattr(self, "warp_on_at", None),
+                         "inputs": [inputs[i] for i in self.gp.warp_dims] if self.gp.warp_dims else None}
         if self.prequential:
             d["prequential_scale"] = dict(zip(self.spec.output_names, map(float, self.pq_scale), strict=True))
         if self.weighted:

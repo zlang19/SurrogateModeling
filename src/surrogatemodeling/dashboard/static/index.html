@@ -196,7 +196,7 @@ async function loadExperiments() {
   const exps = await getJSON("/api/experiments");
   const sel = $("exp");
   const current = state.exp && exps.some((e) => e.name === state.exp) ? state.exp : (exps.find((e) => e.live) || exps[exps.length - 1] || {}).name;
-  sel.innerHTML = exps.map((e) => `<option value="${esc(e.name)}">${e.live ? "● " : ""}${esc(e.name)} (${e.done} done)</option>`).join("");
+  sel.innerHTML = exps.map((e) => `<option value="${esc(e.name)}" title="${esc((e.experiments || []).join(", "))}">${e.live ? "● " : ""}${esc(e.label || e.name)} (${e.done} done)</option>`).join("");
   if (current) { sel.value = current; state.exp = current; }
 }
 function renderHeader(info) {
@@ -233,7 +233,7 @@ function axisStyle() {
 }
 function baseLayout(extra) {
   return Object.assign({
-    margin: { l: 56, r: 12, t: 8, b: 40 }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+    margin: { l: 56, r: 12, t: 20, b: 40 }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
     font: { family: "system-ui, sans-serif", color: css("--text") }, showlegend: false, hovermode: "x unified",
     hoverlabel: { bgcolor: css("--surface"), bordercolor: css("--border"), font: { color: css("--text"), size: 12 } },
   }, extra);
@@ -247,6 +247,40 @@ function logTicks(values) {
   for (let e = Math.floor(Math.log10(lo)); e <= Math.ceil(Math.log10(hi)); e++)
     for (const m of [1, 2, 5]) { const t = m * 10 ** e; if (t >= lo / 1.5 && t <= hi * 1.5) ticks.push(t); }
   return { tickmode: "array", tickvals: ticks, ticktext: ticks.map((t) => Number(t.toPrecision(2)).toString()) };
+}
+/* Robust y-range: quantiles of the median/IQR values (not individual seeds), so a few extreme
+   outliers (e.g. NLL in the thousands for a collapsed variance) don't flatten the useful range.
+   Returns {range, clipped}; range is in axis units (log10 for log axes). */
+function quantile(sorted, q) {
+  if (!sorted.length) return NaN;
+  const i = (sorted.length - 1) * q, lo = Math.floor(i), hi = Math.ceil(i);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+}
+function robustRange(values, metric) {
+  const log = logY(metric);
+  const v = values.filter((x) => x !== null && Number.isFinite(x) && (!log || x > 0)).sort((a, b) => a - b);
+  if (!v.length) return { range: undefined, clipped: false };
+  if (metric === "coverage") {
+    const lo = Math.min(0.5, quantile(v, 0.01));
+    return { range: [lo - 0.02, 1.02], clipped: v[0] < lo - 0.02 };
+  }
+  if (log) {
+    const lo = quantile(v, 0.01), hi = quantile(v, 0.99);
+    return { range: [Math.log10(lo) - 0.08, Math.log10(hi) + 0.08], clipped: v[v.length - 1] > hi * 1.2 || v[0] < lo / 1.2 };
+  }
+  // Linear, heavy-tailed metrics (NLL): Tukey fence (quartiles ± 3 IQR) on the values passed in.
+  const q1 = quantile(v, 0.25), q3 = quantile(v, 0.75), iqr = q3 - q1 || Math.abs(q3) || 1;
+  const lo = Math.max(v[0], q1 - 3 * iqr), hi = Math.min(v[v.length - 1], q3 + 3 * iqr), pad = 0.08 * (hi - lo || 1);
+  return { range: [lo - pad, hi + pad], clipped: v[v.length - 1] > hi + pad || v[0] < lo - pad };
+}
+/* Values that set the y-range. For linear metrics only the later half of the cost range counts:
+   early transients (e.g. NLL in the thousands while a model is still fitting) stay visible but
+   clipped, and the axis shows where methods actually differ. */
+function rangeValues(methods, metric) {
+  return methods.flatMap((m) => {
+    const start = logY(metric) ? 0 : Math.floor(m.x.length / 2);
+    return [...m.q25.slice(start), ...m.q75.slice(start), ...m.median.slice(start)];
+  });
 }
 const METRIC_LABEL = { nrmse: "NRMSE", ncrps: "NCRPS", coverage: "95% coverage", nll: "NLL", max_error: "Max error / std" };
 const logY = (m) => m === "nrmse" || m === "ncrps" || m === "max_error";
@@ -281,13 +315,17 @@ async function refreshPlots() {
     if (!methods.length) { Plotly.react(el, [], baseLayout({})); return; }
     const q = new URLSearchParams({ name: state.exp, problem: p, output: o, metric: state.metric, x: state.x, seeds: state.seeds ? "1" : "0", methods: methods.join(",") });
     const curves = await getJSON("/api/curves?" + q);
-    const ys = curves.methods.flatMap((m) => [...m.q25, ...m.q75, ...m.median, ...(m.seed_lines || []).flatMap((l) => l.y)]);
+    const ys = rangeValues(curves.methods, state.metric);  // seed lines excluded on purpose
     const xs = curves.methods.flatMap((m) => m.x);
-    const yaxis = Object.assign(axisStyle(), { title: { text: METRIC_LABEL[state.metric] }, type: logY(state.metric) ? "log" : "linear" }, logY(state.metric) ? logTicks(ys) : {});
+    const rr = robustRange(ys, state.metric);
+    const inRange = rr.range && logY(state.metric) ? ys.filter((y) => y > 0 && Math.log10(y) >= rr.range[0] && Math.log10(y) <= rr.range[1]) : ys;
+    const yaxis = Object.assign(axisStyle(), { title: { text: METRIC_LABEL[state.metric] }, type: logY(state.metric) ? "log" : "linear", range: rr.range },
+      logY(state.metric) ? logTicks(inRange) : {});
     const xaxis = Object.assign(axisStyle(), { title: { text: state.x === "cost" ? "Cost (HF runs)" : "Wall time (s)" }, type: "log" }, logTicks(xs));
     const shapes = state.metric === "coverage" ? [{ type: "line", xref: "paper", x0: 0, x1: 1, y0: 0.95, y1: 0.95, line: { color: css("--muted"), width: 1, dash: "dot" } }] : [];
     const layout = baseLayout({ xaxis, yaxis, shapes, uirevision: `${state.exp}|${state.metric}|${state.x}` });
     if (!curves.methods.length) layout.annotations = [{ text: state.x === "elapsed" ? "no wall-time data (older runs)" : "no data", showarrow: false, xref: "paper", yref: "paper", x: 0.5, y: 0.5, font: { color: css("--muted") } }];
+    else if (rr.clipped || state.seeds) layout.annotations = [{ text: rr.clipped ? "some values outside range" : "", showarrow: false, xref: "paper", yref: "paper", x: 1, y: 1, xanchor: "right", yanchor: "bottom", font: { color: css("--muted"), size: 10 } }];
     Plotly.react(el, tracesFor(curves), layout, { displayModeBar: false, responsive: true });
   }));
 }
@@ -309,15 +347,17 @@ function renderRuns(info) {
   const { key, asc } = state.sort;
   const val = (r) => key === "state" ? STATE_ORDER[r.state] : r[key];
   rows.sort((a, b) => { const x = val(a), y = val(b); if (x === y) return 0; if (x === null || x === undefined) return 1; if (y === null || y === undefined) return -1; return (x < y ? -1 : 1) * (asc ? 1 : -1); });
-  $("runs").querySelector("thead").innerHTML = "<tr>" + COLS.map((c) => `<th data-k="${c.key}" class="${c.num ? "num" : ""} ${key === c.key ? "sorted" + (asc ? " asc" : "") : ""}">${c.label}</th>`).join("") + "</tr>";
+  const cols = info.runs.length && info.runs[0].experiment !== undefined ? [{ key: "experiment", label: "Experiment" }, ...COLS] : COLS;
+  $("runs").querySelector("thead").innerHTML = "<tr>" + cols.map((c) => `<th data-k="${c.key}" class="${c.num ? "num" : ""} ${key === c.key ? "sorted" + (asc ? " asc" : "") : ""}">${c.label}</th>`).join("") + "</tr>";
   $("runs").querySelector("tbody").innerHTML = rows.map((r) => {
     const hb = r.state === "running" || r.state === "stale" ? fmtDur(r.heartbeat_age) + " ago" : "—";
     return `<tr data-run="${esc(r.run)}" class="${r.state === "failed" || r.state === "stale" ? "flag" : ""}" title="${esc(r.error || "")}">` +
+      (r.experiment !== undefined ? `<td class="sub">${esc(r.experiment)}</td>` : "") +
       `<td>${esc(r.problem)}</td><td><span class="dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color(info.methods.find((m) => m.name === r.method)?.index ?? -1)};margin-right:6px"></span>${esc(r.method)}</td>` +
       `<td class="num">${r.seed}</td><td><span class="st st-${r.state}">${STATE_LABEL[r.state]}</span></td>` +
       `<td class="num">${fmt(r.cost, 1)} / ${fmt(r.budget, 0)}</td><td class="num">${r.batches ?? "—"}</td>` +
       `<td class="num">${fmtDur(r.elapsed)}</td><td class="num">${r.state === "running" ? fmtDur(r.eta) : "—"}</td><td class="num">${hb}</td></tr>`;
-  }).join("") || `<tr><td colspan="${COLS.length}" class="muted">no runs match</td></tr>`;
+  }).join("") || `<tr><td colspan="${cols.length}" class="muted">no runs match</td></tr>`;
 }
 $("runs").addEventListener("click", (e) => {
   const th = e.target.closest("th");
@@ -338,7 +378,7 @@ async function refreshRun() {
   if (!state.openRun) return;
   const d = await getJSON("/api/run?" + new URLSearchParams({ name: state.exp, run: state.openRun }));
   const r = d.run;
-  $("dTitle").textContent = state.openRun.replaceAll("__", " · ");
+  $("dTitle").textContent = state.openRun.replace("::", " · ").replaceAll("__", " · ");
   const info = [["State", `<span class="st st-${r.state}">${STATE_LABEL[r.state] || r.state}</span>`], ["Cost", `${fmt(r.cost, 2)} / ${fmt(r.budget, 0)}`],
     ["Batches", r.batches ?? "—"], ["Elapsed", fmtDur(r.elapsed)]];
   if (r.error) info.push(["Error", `<span class="err">${esc(r.error)}</span>`]);
@@ -348,10 +388,13 @@ async function refreshRun() {
   const metricCols = Object.keys(rows).filter((k) => k.startsWith(state.metric + "/"));
   // Series here are outputs, not methods: take the first palette slots in order.
   const traces = metricCols.map((k, i) => ({ x: rows[state.x] || rows.cost, y: rows[k], mode: "lines+markers", marker: { size: 5 }, line: { width: 2, shape: "hv", color: color(i) }, name: k.split("/")[1], type: "scatter" }));
-  const dys = metricCols.flatMap((k) => rows[k]);
+  const dys = metricCols.flatMap((k) => logY(state.metric) ? rows[k] : rows[k].slice(Math.floor(rows[k].length / 2)));
+  const drr = robustRange(dys, state.metric);
+  const dIn = drr.range && logY(state.metric) ? dys.filter((y) => y > 0 && Math.log10(y) >= drr.range[0] && Math.log10(y) <= drr.range[1]) : dys;
   Plotly.react("dPlot", traces, baseLayout({ showlegend: metricCols.length > 1, legend: { orientation: "h", y: 1.12 },
     xaxis: Object.assign(axisStyle(), { type: "log", title: { text: state.x === "cost" ? "Cost" : "Wall time (s)" } }, logTicks(rows[state.x] || rows.cost || [])),
-    yaxis: Object.assign(axisStyle(), { type: logY(state.metric) ? "log" : "linear", title: { text: METRIC_LABEL[state.metric] } }, logY(state.metric) ? logTicks(dys) : {}) }), { displayModeBar: false, responsive: true });
+    yaxis: Object.assign(axisStyle(), { type: logY(state.metric) ? "log" : "linear", title: { text: METRIC_LABEL[state.metric] }, range: drr.range },
+      logY(state.metric) ? logTicks(dIn) : {}) }), { displayModeBar: false, responsive: true });
 
   const cols = ["batch", "n_evals", "cost", "elapsed", "sim_time", "predict_time", ...metricCols].filter((c) => rows[c]);
   $("dRows").querySelector("thead").innerHTML = "<tr>" + cols.map((c) => `<th class="num">${esc(c)}</th>`).join("") + "</tr>";
@@ -390,6 +433,7 @@ async function tick() {
 }
 const params = new URLSearchParams(location.search);
 if (params.get("exp")) state.exp = params.get("exp");
+if (params.get("metric")) { state.metric = params.get("metric"); $("metric").value = state.metric; }
 tick().then(() => { if (location.hash.startsWith("#run=")) openRun(decodeURIComponent(location.hash.slice(5))); });
 setInterval(tick, POLL_MS);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) tick(); });

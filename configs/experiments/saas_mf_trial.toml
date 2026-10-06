@@ -1,0 +1,14 @@
+# Option C trial: cost-aware sampling (pq_matern acquisition) with a SAAS surrogate, with and without
+# fidelity-knob inputs. 3 seeds, written into calib_screen to pair by seed with the earlier arms.
+name = "calib_screen"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 3
+problems = ["toymc_axial", "borehole_d30"]
+methods = ["adaptive_iv_mf_saas", "adaptive_iv_mf_saas_noknob"]
+
+# Each run holds a SAAS (JAX) process (~3 GB) plus the co-kriging model.
+[pools.saas_mf]
+methods = ["adaptive_iv_mf_saas", "adaptive_iv_mf_saas_noknob"]
+workers = 3

@@ -61,10 +61,23 @@ class FixedDesignMethod:
         self.stale = True
 
 
+class _MaternGPs(IndependentGPs):
+    def _covar_module(self, d: int):
+        from botorch.models.utils.gpytorch_modules import get_covar_module_with_dim_scaled_prior
+
+        return get_covar_module_with_dim_scaled_prior(ard_num_dims=d, use_rbf_kernel=False)
+
+
 class SobolGP(FixedDesignMethod):
+    """kernel="matern" swaps botorch's default ARD RBF for ARD Matérn-5/2 (`sobol_gp_matern`)."""
+
+    def __init__(self, kernel: str = "rbf"):
+        self.kernel = kernel
+
     def setup(self, spec: ProblemSpec, budget: float, rng: np.random.Generator) -> None:
         super().setup(spec, budget, rng)
-        self.gp = IndependentGPs(refit_growth=1.0)  # baseline: full hyperparameter fit every batch
+        cls = _MaternGPs if self.kernel == "matern" else IndependentGPs
+        self.gp = cls(refit_growth=1.0)  # baseline: full hyperparameter fit every batch
 
     def predict(self, X: np.ndarray) -> Prediction:
         if self.stale:

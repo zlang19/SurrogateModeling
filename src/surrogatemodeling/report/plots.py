@@ -63,6 +63,12 @@ def plot_error_vs_cost(df: pd.DataFrame, problem: str, output: str, path: Path, 
 
     ax.set_xscale("log")
     ax.set_yscale("log")
+    # Robust y-limits from the medians and IQR bands, so a few extreme outliers don't flatten the plot.
+    vals = np.concatenate([line.get_ydata() for line in ax.get_lines()] + [np.asarray(c.get_paths()[0].vertices[:, 1]) for c in ax.collections]) if ax.get_lines() else np.array([])
+    vals = vals[np.isfinite(vals) & (vals > 0)]
+    if vals.size:
+        lo, hi = np.percentile(vals, [1, 99])
+        ax.set_ylim(lo / 1.25, hi * 1.25)
     ax.set_xlabel("Cumulative cost (high-fidelity run equivalents)", color=TEXT)
     ax.set_ylabel(f"{metric.upper()} on test set", color=TEXT)
     ax.set_title(f"{problem}: {output}", color=TEXT, loc="left", fontsize=11)

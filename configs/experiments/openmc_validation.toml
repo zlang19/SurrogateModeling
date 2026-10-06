@@ -1,0 +1,19 @@
+# OpenMC validation (plan stage 5, 2026-10-06): the pre-validation winner against the
+# high-fidelity baselines on the real OpenMC column. See docs/ValidationRecommendation.md.
+# Methods are listed in recommendation order; with a single pool, runs start in that order
+# (method by method, seeds 0-2). The two Sobol variants and SAAS share sobol_gp's design and
+# noise seeds, so they hit the OpenMC evaluation cache once sobol_gp has run.
+# Each run evaluates 5 OpenMC points in parallel (single-threaded processes): 2 workers ~ 10 cores.
+name = "openmc_validation"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 2
+problems = ["openmc"]
+methods = [
+  "adaptive_iv_mf_cks_pq_matern_safe",
+  "sobol_gp",
+  "sobol_gp_matern",
+  "sobol_saas",
+  "adaptive_iv_mf_cks_pq_matern",
+]

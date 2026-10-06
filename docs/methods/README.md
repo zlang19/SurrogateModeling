@@ -27,6 +27,10 @@ The runner asks for batches of 5 and stops when the budget (in high-fidelity run
 | 7 | `adaptive_iv_mf_ck` | Sobol seed → adaptive | Co-kriging: per-config bias GP + bias-aware joint acquisition | Chooses from menu | [adaptive_iv_mf_ck.md](adaptive_iv_mf_ck.md) |
 | 7c | `adaptive_iv_mf_ck_cal` | Sobol seed → adaptive | #7 + conformal-style LOO calibration | Chooses from menu | [adaptive_iv_mf_ck_cal.md](adaptive_iv_mf_ck_cal.md) |
 | 7s | `adaptive_iv_mf_cks` | Sobol seed → adaptive | #7 with learned per-config σ scales (multiplicative) | Chooses from menu | [adaptive_iv_mf_cks.md](adaptive_iv_mf_cks.md) |
+| 8 | `adaptive_iv_mf_saas`, `_saas_noknob` | Sobol seed → adaptive | `pq_matern`'s cost-aware sampling with a SAAS surrogate (subsample NUTS; fidelity knobs as inputs, or none) | Chooses from menu | [adaptive_iv_mf_saas.md](adaptive_iv_mf_saas.md) |
+| 1m | `sobol_gp_matern` | Fixed Sobol | #1 with a Matérn-5/2 kernel | High only | [sobol_gp_matern.md](sobol_gp_matern.md) |
+| 7s-pm | `adaptive_iv_mf_cks_pq_matern` | Sobol seed → adaptive | #7s + prequential calibration + Matérn | Chooses from menu | [adaptive_iv_mf_cks_pq_matern.md](adaptive_iv_mf_cks_pq_matern.md) |
+| 7s-safe | `adaptive_iv_mf_cks_pq_matern_safe` | Sobol seed → adaptive | `pq_matern` on a converged-source menu (only particles vary) | Chooses from menu (HF cycles only) | [adaptive_iv_mf_cks_pq_matern_safe.md](adaptive_iv_mf_cks_pq_matern_safe.md) |
 | 7s-x | `adaptive_iv_mf_cks_{pq,matern,pooled,log,wt,ens,warp}` | Sobol seed → adaptive | #7s with one calibration change each (screening) | Chooses from menu | [cks_variants.md](cks_variants.md) |
 
 The registry order in [registry.py](../../src/surrogatemodeling/registry.py) also fixes each method's color in plots and the dashboard.

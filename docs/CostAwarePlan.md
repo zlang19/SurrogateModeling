@@ -150,8 +150,24 @@ For winners {pq, matern, warp}: screening already covers 4 of the 2³ = 8 arms (
 - Neural ensembles: deferred with the other neural methods.
 
 **Experiment (three stages):**
-1. **Screening** (`calib_screen.toml`, running): each calibration option and each Tier 1 variant on the leading cost-aware method (#7s), with **3 seeds** on `toymc_axial` and Borehole-30D. About 4–5 h with the 8-worker pool.
-2. **Combinations** (Tier 1.5): a factorial over the screening winners, 3 seeds, compared paired by seed.
+1. ✅ **Screening** (`calib_screen.toml`; results in [cks_variants.md](methods/cks_variants.md#screening-results-2026-10-05-3-seeds-paired-by-seed-against-the-base-7s)). **Matérn is the calibration winner** (coverage 0.77 → 0.92). `pq` improves NCRPS consistently. `warp` is the first to beat the baseline on axial offset at full budget (0.200), though it's worse early. `ens` and `wt` are dropped. each calibration option and each Tier 1 variant on the leading cost-aware method (#7s), with **3 seeds** on `toymc_axial` and Borehole-30D. About 4–5 h with the 8-worker pool.
+2. ✅ **Combinations** (Tier 1.5; results in [cks_variants.md](methods/cks_variants.md#combination-results-2026-10-05-3-seeds-paired-by-seed-against-the-base-7s)). **`pq_matern_warp` passes the coverage gate on every output (0.96) and has the best final accuracy** (axial offset 0.177 vs 0.295), but warping is poor below cost ≈ 30, so its AUC is worse. Strong Matérn × warp synergy. After review, two trials followed (2026-10-05):
+  - **Delayed top-8 warp:** fast (~93 min vs ~6 h) but **fails on `toymc_axial`** (k-eff 0.121 vs 0.059).
+  - **SAAS trial:** better than the plain GP everywhere at the same budget, and well calibrated.
+
+  See [Learnings](Learnings.md#saas-and-the-pareto-view-2026-10-05).
+  - **SAAS + cost-aware (#8):** built, but its trial was **cancelled** after two out-of-memory kills, with memory growing ~1 GB/min per run from an unidentified cause ([adaptive_iv_mf_saas.md](methods/adaptive_iv_mf_saas.md)).
+
+  - **Pre-validation screen (2026-10-06, `prevalidation_screen.toml`):** three arms. **The converged-source menu (`pq_matern_safe`) wins outright:** best final NRMSE on every `toymc_axial` output (axial offset 0.144 vs baseline 0.179), passes the gate everywhere (0.93–0.99), and takes 25 min per run vs 125. `sobol_gp_matern` is a better-calibrated baseline; the 50% seed (`seed50`) is worse. Report and validation recommendation: [ValidationRecommendation.md](ValidationRecommendation.md).
+
+  Arms were: `pq+matern`, `pq+warp`, `matern+warp`, `pq+matern+warp`, `pq+matern+warp+pooled`, with 3 seeds, compared paired by seed.
 3. **Confirmation:** the best one or two combinations against the base, at **10 seeds** on the MCNP-like problems.
 
 All stages are scored by AUC-NRMSE, AUC-NCRPS and final coverage (gate ≥ 0.90), with NLL and max error as diagnostics.
+
+**Then (decided 2026-10-05):**
+4. **SAAS trial:** `sobol_saas` × `toymc_axial`, `toymc`, Borehole-30D × 3 seeds, against the baseline and the confirmed best method. The full SAAS set stays on hold.
+5. **OpenMC validation** (plan role 3): the baseline and the best method on the OpenMC column, sized to about a day of compute:
+   - a reduced reference test set;
+   - batches evaluated in parallel;
+   - a shared evaluation cache for the common seed design.

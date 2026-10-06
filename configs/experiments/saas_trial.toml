@@ -1,0 +1,13 @@
+# Approved SAAS trial (2026-10-05): sobol_saas on the MCNP-like problems, 3 seeds. Compared against
+# the baseline and the confirmed best cost-aware method (results/costaware, results/calib_confirm).
+# SAAS (JAX NUTS) is ~3 GB per run; 3 at a time while the dwarp trial runs. The full SAAS set stays on hold.
+name = "saas_trial"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 3
+problems = ["toymc_axial", "toymc", "borehole_d30"]
+methods = ["sobol_saas"]
+
+[limits]
+sobol_saas = 3

@@ -1,0 +1,8 @@
+# High-fidelity baseline in the NCRPS era, as a reference line next to the SAAS trial (same 3 seeds/problems).
+name = "saas_trial"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 3
+problems = ["toymc_axial", "toymc", "borehole_d30"]
+methods = ["sobol_gp"]

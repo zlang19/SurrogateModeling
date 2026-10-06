@@ -26,7 +26,66 @@ If several variants win on their own, their combinations are tested with a small
 
 For {pq, matern, warp}, only 4 new arms are needed beyond screening (`pq+matern`, `pq+warp`, `matern+warp`, all three). Arms are compared paired by seed. See [CostAwarePlan.md](../CostAwarePlan.md#calibration-follow-up-decided-2026-10-04-starts-after-costaware-finishes).
 
-## Screening experiment
+## Pre-validation results (2026-10-06, 3 seeds, paired by seed)
+
+| `toymc_axial` final NRMSE (coverage) | `pq_matern_safe` | `pq_matern` | `pq_matern_seed50` | `sobol_gp_matern` |
+|---|---|---|---|---|
+| k-eff | **0.048** (0.98) | 0.059 (0.96) | 0.101 (0.78) | 0.145 (0.92) |
+| axial offset | **0.144** (0.97) | 0.287 (0.72) | 0.275 (0.90) | 0.188 (0.93) |
+| axial peaking | **0.283** (0.97) | 0.370 (0.86) | 0.365 (0.92) | 0.387 (0.92) |
+| capture/fission | **0.052** (0.97) | 0.066 (0.94) | 0.079 (0.93) | 0.173 (0.90) |
+| run time | 25 min | 125 min | 41 min | 6 min |
+
+`safe` keeps only configs with high-fidelity cycle counts (particles 0.1/0.25/0.5/1×). On Borehole-30D, where only histories vary, it is identical to `pq_matern`. See [ValidationRecommendation.md](../ValidationRecommendation.md).
+
+## Combination results (2026-10-05, 3 seeds, paired by seed against the base #7s)
+
+| Arm | AUC-NRMSE | AUC-NCRPS | Final NRMSE | Coverage, worst output | Axial offset: final NRMSE / coverage |
+|---|---|---|---|---|---|
+| base (#7s) | 1.000 | 1.000 | 1.000 | 0.51 | 0.295 / 0.51 |
+| matern | 1.005 | 0.999 | 0.973 | 0.67 | 0.287 / 0.67 |
+| pq_matern | 1.005 | 1.000 | 0.973 | 0.72 | 0.287 / 0.72 |
+| matern_warp | 1.091 | 1.211 | **0.789** | 0.84 | **0.177** / 0.89 |
+| **pq_matern_warp** | 1.091 | 1.277 | **0.789** | **0.96** | **0.177 / 0.96** |
+| pq_matern_warp_pooled | 1.115 | 1.264 | 0.915 | 0.93 | 0.186 / 0.95 |
+
+(Ratios vs the base, median over problem × output × seed; < 1 is better.)
+
+**Factorial main effects** (on vs off, averaged over the other two factors):
+- **`matern`:** final NRMSE ×0.90, coverage +0.14.
+- **`warp`:** final NRMSE ×0.89, coverage +0.05, but AUC-NRMSE ×1.11 and AUC-NCRPS ×1.26 (bad early).
+- **`pq`:** accuracy unchanged by design, coverage +0.08.
+
+**Strong `matern` × `warp` interaction:** either alone cuts final error about 3%; together, 21%. Matérn's rougher kernel seems to stop the warp from overfitting.
+
+**Over the budget** (axial offset, `toymc_axial`):
+
+| Cost | base | pq_matern | pq_matern_warp |
+|---|---|---|---|
+| 25 | NRMSE 0.44, NLL −0.3 | 0.45 | **0.73**, NLL 1.7 (matern_warp without pq: NLL 247) |
+| 50 | 0.32 | 0.31 | **0.25**, coverage 0.95 |
+| 100 | 0.295, coverage 0.51 | 0.287, coverage 0.72 | **0.177**, coverage **0.96** |
+
+**What the numbers say:**
+- **Warping hurts with little data and wins with enough:** it overfits below cost ≈ 30, and is best on every output by cost 50. AUC penalizes the early phase, which is why the AUC ratios disagree with the final numbers.
+- **`pq_matern_warp` is the first arm to pass the coverage gate on every output** (0.96–0.97). Its final axial offset (0.177) beats the high-fidelity baseline's 0.216 from `costaware`, and its final peaking is 0.295 vs the base's 0.373.
+- `pooled` adds nothing on top.
 `configs/experiments/calib_screen.toml`: the base and all 7 variants × `toymc_axial` and Borehole-30D × 3 seeds, all in one 8-worker pool. They're scored by AUC-NRMSE, AUC-NCRPS and final coverage against the 0.90 gate ([EvaluationCriteria.md](../EvaluationCriteria.md)). Winners go to the combination stage (above), then the best one or two combinations go to a 10-seed confirmation run.
+
+## Screening results (2026-10-05, 3 seeds, paired by seed against the base #7s)
+
+| Variant | AUC-NRMSE ratio | AUC-NCRPS ratio (share improved) | Final coverage, median (axial offset) | Verdict |
+|---|---|---|---|---|
+| `matern` | 1.005 | 0.999 | **0.92** (**0.67**); base 0.77 (0.51) | **Big calibration win** at unchanged accuracy: k-eff 0.96, capture/fission 0.94, Borehole 0.96 |
+| `pq` | 1.000 | **0.993 (93%)** | 0.74 (0.58) | Consistent small NCRPS win, but it **shrank** error bars where residuals are noise-dominated (Borehole 0.83 → 0.77). Now clamped to widen only |
+| `warp` | 1.12 | 1.26 (0%) | 0.72 (0.64) | Worse early (overfits small data), but **final axial-offset NRMSE 0.200**, the first method to beat the baseline (0.216) on axial offset |
+| `pooled` | 0.997 | 1.003 | 0.79 (**0.63**) | Mild axial-offset win (final 0.281) |
+| `log` | 0.987 | 0.982 | 0.74 (0.56) | Marginal |
+| `ens` | 0.994 | 0.994 | 0.79 (0.50) | No gain at 3× cost: dropped |
+| `wt` | 1.000 | 1.000 | 0.75 (0.54) | No effect: dropped |
+
+**Warping's NLL blow-up:** the `warp` arms (alone and in combinations) reach NLL of 600–30,000 early in runs, while their NRMSE stays reasonable. Most likely, test points outside the training box (normal-tailed inputs) get clamped by botorch's `Warp`, so the GP's variance collapses there while the error doesn't. That's extreme overconfidence outside the box. Watch it in the combination analysis, and consider warping on a padded box (or clamping only the variance) if warping is kept.
+
+**Carried to the combination stage** (`calib_combo.toml`, results in `results/calib_screen`): `pq+matern`, `pq+warp`, `matern+warp`, `pq+matern+warp`, and `pq+matern+warp+pooled`. These use the clamped `pq` (scale ≥ 1); the screening `pq` arm used the unclamped version.
 
 **Sanity check** (Borehole, honest σ, 1 seed): every variant ran. `_pq` found a scale of 1.00, i.e. nothing to fix, and `_wt` matched the base exactly, as it must with a single output.

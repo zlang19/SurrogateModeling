@@ -22,7 +22,9 @@ N_CAND = 1024
 
 
 class AdaptiveGP:
-    def __init__(self, score: str = "iv", cost_aware: bool = False, extra_noise: bool = False):
+    def __init__(self, score: str = "iv", cost_aware: bool = False, extra_noise: bool = False,
+                 seed_fraction: float = SEED_FRACTION):
+        self.seed_fraction = seed_fraction
         self.score = score
         self.cost_aware = cost_aware
         self.extra_noise = extra_noise
@@ -33,7 +35,7 @@ class AdaptiveGP:
         self.options = np.arange(len(spec.fidelities)) if self.cost_aware else np.array([spec.hf])
         self.costs = np.array([spec.cost(i) for i in self.options])
         self.unit_cost = spec.cost(spec.hf)
-        n_seed = max(2, int(np.floor(SEED_FRACTION * budget / self.unit_cost)))
+        n_seed = max(2, int(np.floor(self.seed_fraction * budget / self.unit_cost)))
         self.queue = sobol_design(spec, n_seed, rng)
         self.ref = spec.dist.sample(N_REF, rng)
         self.data = Dataset(spec)

@@ -34,7 +34,7 @@ class Dashboard:
             hit = self._snaps.get(name)
             if hit and time.monotonic() - hit[0] < SNAPSHOT_TTL_S:
                 return hit[1]
-            snap = self.store.snapshot(name)
+            snap = self.store.snapshot_all() if name == D.ALL else self.store.snapshot(name)
             self._snaps[name] = (time.monotonic(), snap)
             return snap
 
@@ -60,7 +60,7 @@ class Dashboard:
             **summary,
             "problems": D.problem_outputs(snap.rows),
             "methods": [{"name": m, "index": D.method_index(m)} for m in methods],
-            "runs": runs.drop(columns=["started"]).to_dict("records"),
+            "runs": runs.drop(columns=["started"], errors="ignore").to_dict("records"),
         }
 
 

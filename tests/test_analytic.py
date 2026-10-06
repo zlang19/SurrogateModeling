@@ -5,7 +5,7 @@ from surrogatemodeling.problems.analytic import borehole, mc_cost, padded, wing_
 from surrogatemodeling.registry import PROBLEMS
 
 
-@pytest.mark.parametrize("name", [n for n in PROBLEMS if not n.startswith("toymc")])  # MC truth is slow; see test_toymc*
+@pytest.mark.parametrize("name", [n for n in PROBLEMS if not n.startswith(("toymc", "openmc"))])  # MC truth is slow
 def test_problem_outputs_are_finite_and_vary(name):
     p = PROBLEMS[name]()
     X, Y = p.test_set()

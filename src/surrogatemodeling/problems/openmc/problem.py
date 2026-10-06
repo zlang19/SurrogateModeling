@@ -83,3 +83,94 @@ def run_point(
         out = json.loads((run_dir / "output.json").read_text())
     out["cpu_total"] = (after.ru_utime - before.ru_utime) + (after.ru_stime - before.ru_stime)
     return out
+
+
+# --- The OpenMC column behind the Problem protocol (final validation) --------------------------
+
+import hashlib  # noqa: E402
+import multiprocessing  # noqa: E402
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor  # noqa: E402
+
+from surrogatemodeling.core.protocols import FidelityConfig, Observation, ProblemSpec  # noqa: E402
+from surrogatemodeling.problems.base import cache_dir  # noqa: E402
+
+# Measured by studies/fidelity_characterization.py (results/openmc_fidelity/cost_fit.json).
+OMC_HF = {"particles": 10000, "inactive": 100, "active": 200}
+OMC_OVERHEAD_S, OMC_S_PER_PARTICLE_BATCH = 11.2, 1.193e-4
+# Validation truth: 2x particles and 2x inactive cycles of HF (~16 CPU-min each); a 100-point
+# test set keeps the reference build to ~27 CPU-h.
+OMC_REF = {"particles": 2 * OMC_HF["particles"], "inactive": 2 * OMC_HF["inactive"], "active": OMC_HF["active"]}
+OMC_TEST_SIZE, OMC_TEST_SEED = 100, 20261005
+PARALLEL_EVALS = 5  # a batch's points run as concurrent single-thread OpenMC processes
+
+
+def _omc_cost_s(k: dict) -> float:
+    return OMC_OVERHEAD_S + OMC_S_PER_PARTICLE_BATCH * k["particles"] * (k["inactive"] + k["active"])
+
+
+def omc_menu() -> tuple[list[FidelityConfig], int]:
+    """The characterization grid's 12 configs (absolute knobs), costs from the measured model."""
+    hf = OMC_HF
+    configs = {"hf": dict(hf)}
+    for knob, values in {"particles": (1000, 2500, 5000), "inactive": (10, 25, 50), "active": (25, 50, 100)}.items():
+        for v in values:
+            configs[f"{knob}={v}"] = {**hf, knob: v}
+    configs["joint_low"] = {"particles": 1000, "inactive": 10, "active": 25}
+    configs["low_particles_low_active"] = {**hf, "particles": 1000, "active": 25}
+    hf_cost = _omc_cost_s(hf)
+    items = sorted(configs.items(), key=lambda kv: _omc_cost_s(kv[1]))
+    menu = [FidelityConfig(n, {k: float(v) for k, v in kn.items()}, _omc_cost_s(kn) / hf_cost) for n, kn in items]
+    return menu, next(i for i, (n, _) in enumerate(items) if n == "hf")
+
+
+def _cached_run(params: dict, knobs: dict, seed: int) -> tuple[list, list]:
+    """run_point with an on-disk cache keyed by (inputs, knobs, seed). Methods that share a seed
+    design (same Sobol points, same noise seeds) then reuse each other's expensive runs."""
+    key = hashlib.sha256(json.dumps([params, knobs, int(seed)], sort_keys=True).encode()).hexdigest()[:32]
+    path = cache_dir() / "openmc_evals" / f"{key}.json"
+    if path.exists():
+        d = json.loads(path.read_text())
+        return d["y"], d["sigma"]
+    out = run_point(params, {k: int(v) for k, v in knobs.items()}, seed)
+    y = [out["outputs"][o] for o in OUTPUTS]
+    s = [out["sigma"][o] for o in OUTPUTS]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"y": y, "sigma": s, "cpu": out["cpu_total"], "knobs": knobs}))
+    os.replace(tmp, path)
+    return y, s
+
+
+def _truth_point(args) -> list:
+    params, seed = args
+    return _cached_run(params, OMC_REF, seed)[0]
+
+
+class OpenMCProblem:
+    """The 2 m pin column with the 12-config cycle/particle menu, for final validation."""
+
+    def __init__(self):
+        fidelities, hf = omc_menu()
+        self.spec = ProblemSpec("openmc", DIST, OUTPUTS, fidelities, hf)
+
+    def evaluate(self, X: np.ndarray, fidelity: np.ndarray, rng: np.random.Generator) -> Observation:
+        seeds = rng.integers(0, 2**31, size=len(X))
+        jobs = [(params_from_vector(x), self.spec.fidelities[i].knobs, int(s)) for x, i, s in zip(X, fidelity, seeds, strict=True)]
+        with ThreadPoolExecutor(max_workers=PARALLEL_EVALS) as pool:  # each job is its own OpenMC process
+            res = list(pool.map(lambda j: _cached_run(*j), jobs))
+        return Observation(y=np.array([r[0] for r in res]), sigma=np.array([r[1] for r in res]))
+
+    def test_set(self, workers: int | None = None) -> tuple[np.ndarray, np.ndarray]:
+        """Reference truth for OMC_TEST_SIZE points (cached per point, so the build resumes)."""
+        final = cache_dir() / "testsets" / f"openmc_n{OMC_TEST_SIZE}_s{OMC_TEST_SEED}.npz"
+        if final.exists():
+            d = np.load(final)
+            return d["X"], d["Y"]
+        X = DIST.sample(OMC_TEST_SIZE, np.random.default_rng(OMC_TEST_SEED))
+        jobs = [(params_from_vector(x), OMC_TEST_SEED + i) for i, x in enumerate(X)]
+        print(f"building openmc truth: {len(jobs)} reference runs (cached per point)", flush=True)
+        with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn")) as pool:
+            Y = np.array(list(pool.map(_truth_point, jobs)))
+        final.parent.mkdir(parents=True, exist_ok=True)
+        np.savez(final, X=X, Y=Y)
+        return X, Y
