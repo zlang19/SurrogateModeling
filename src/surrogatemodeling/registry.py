@@ -71,6 +71,11 @@ METHODS: dict[str, Callable[[], Method]] = {
     ),
     # Pre-validation screening (2026-10-06): converged-source menu, and a 50% HF seed.
     "adaptive_iv_mf_cks_pq_matern_safe": lambda: CoKrigingAdaptive(noise_scale=True, prequential=True, kernel="matern", safe_menu=True),
+    # OpenMC validation round 2 (2026-10-06): 2x2 on the safe menu. "conv" pins only inactive cycles
+    # (active cycles may be cut: cheaper, still converged); "pooled" learns one sigma scale per output.
+    "adaptive_iv_mf_cks_pq_matern_safe_pooled": lambda: CoKrigingAdaptive(noise_scale=True, prequential=True, kernel="matern", safe_menu=True, pooled_scale=True),
+    "adaptive_iv_mf_cks_pq_matern_conv": lambda: CoKrigingAdaptive(noise_scale=True, prequential=True, kernel="matern", safe_menu="inactive"),
+    "adaptive_iv_mf_cks_pq_matern_conv_pooled": lambda: CoKrigingAdaptive(noise_scale=True, prequential=True, kernel="matern", safe_menu="inactive", pooled_scale=True),
     "adaptive_iv_mf_cks_pq_matern_seed50": lambda: CoKrigingAdaptive(noise_scale=True, prequential=True, kernel="matern", seed_fraction=0.5),
     # #8: pq_matern's cost-aware sampling, SAAS surrogate (subsample NUTS, fidelity knobs as inputs).
     "adaptive_iv_mf_saas": SaasCostAware,

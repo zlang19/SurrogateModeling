@@ -168,6 +168,7 @@ To add a method or problem, implement the protocol in `core/protocols.py`, regis
 | [docs/PLAN.md](docs/PLAN.md) | Design decisions: scope, budget and metrics, fidelity and noise, problems, the frozen interface, build steps |
 | [docs/EvaluationCriteria.md](docs/EvaluationCriteria.md) | The four metrics (NRMSE, coverage, NLL, max error) and what their values mean for a model; the three ranking-report criteria built from them; a diagnosis table |
 | [docs/methods/](docs/methods/README.md) | One page per method, the shared GP and acquisition machinery, and results tables |
+| [docs/OpenMCValidation.md](docs/OpenMCValidation.md) | OpenMC validation results by round: tables, per-seed results, what transferred from the toy, and the next arms |
 | [docs/ValidationRecommendation.md](docs/ValidationRecommendation.md) | Report on every method tested, ranked for the OpenMC validation, with the evidence and caveats |
 | [docs/Learnings.md](docs/Learnings.md) | Findings so far: results, method pitfalls, toy MC lessons, operations, open questions |
 | [docs/DashboardPlan.md](docs/DashboardPlan.md) | The live dashboard: logging format, run states, ETAs, page design |

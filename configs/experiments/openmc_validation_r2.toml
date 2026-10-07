@@ -1,0 +1,17 @@
+# OpenMC validation round 2 (2026-10-06). Round 1 (openmc_validation) passed: the safe menu beat
+# the baseline on every seed and output. Its gaps: the full menu was better on the smooth outputs
+# (it buys 3x cheaper points), and per-config sigma scales were unstable on OpenMC. 2x2 on safe:
+#   conv         pin only inactive cycles (active cycles may be cut; adds a 0.071-cost config)
+#   *_pooled     one sigma scale per output instead of per (output, config)
+# Queued in recommendation order; the 25-point HF seed design is shared, so it hits the eval cache.
+name = "openmc_validation_r2"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 2
+problems = ["openmc"]
+methods = [
+  "adaptive_iv_mf_cks_pq_matern_conv",
+  "adaptive_iv_mf_cks_pq_matern_conv_pooled",
+  "adaptive_iv_mf_cks_pq_matern_safe_pooled",
+]

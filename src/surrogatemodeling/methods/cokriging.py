@@ -159,8 +159,9 @@ class CoKrigingAdaptive(AdaptiveGP):
     ensemble      number of GPs (>1: extra members start from jittered hyperparameters; predictions mix)
     warp_after    delayed warping: off until the data has this many points, then warp only the
                   `warp_top_k` most relevant inputs (by ARD) and force a full refit
-    safe_menu     only buy configs that cut *particles* (inactive and active cycles at their HF
-                  values): converged sources, little bias, near-proportional cost
+    safe_menu     True: only buy configs that cut *particles* (inactive and active cycles at their HF
+                  values): converged sources, little bias, near-proportional cost. "inactive": pin only
+                  the inactive cycles, so active cycles can be cut too (still converged sources)
     seed_fraction share of the budget spent on the HF Sobol seed (default 0.25)
     prequential   scale predictive sd so recent *out-of-sample* residuals (each batch predicted before
                   training on it) cover 95%
@@ -170,7 +171,7 @@ class CoKrigingAdaptive(AdaptiveGP):
     def __init__(self, calibrate: bool = False, noise_scale: bool = False, pooled_scale: bool = False,
                  kernel: str = "rbf", warp: bool = False, log_outputs: bool = False, ensemble: int = 1,
                  prequential: bool = False, weighted: bool = False, warp_after: int | None = None,
-                 warp_top_k: int = 8, safe_menu: bool = False, seed_fraction: float = 0.25):
+                 warp_top_k: int = 8, safe_menu: bool | str = False, seed_fraction: float = 0.25):
         super().__init__(score="iv", cost_aware=True, extra_noise=not noise_scale, seed_fraction=seed_fraction)
         self.safe_menu = safe_menu
         self.warp_after, self.warp_top_k = warp_after, warp_top_k
@@ -190,9 +191,10 @@ class CoKrigingAdaptive(AdaptiveGP):
             warm_start=not (self.warp and self.warp_after is None),
         )
         if self.safe_menu:
+            pinned = ("inactive",) if self.safe_menu == "inactive" else ("inactive", "active")
             hf = spec.fidelities[spec.hf].knobs
             keep = [i for i, f in enumerate(spec.fidelities)
-                    if all(f.knobs.get(k, hf[k]) == hf[k] for k in ("inactive", "active") if k in hf)]
+                    if all(f.knobs.get(k, hf[k]) == hf[k] for k in pinned if k in hf)]
             self.options = np.array(keep)
             self.costs = np.array([spec.cost(i) for i in self.options])
         self.members = [make(None)] + [make(int(rng.integers(2**31))) for _ in range(self.ensemble - 1)]

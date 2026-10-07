@@ -161,6 +161,7 @@ For winners {pq, matern, warp}: screening already covers 4 of the 2³ = 8 arms (
   - **Pre-validation screen (2026-10-06, `prevalidation_screen.toml`):** three arms. **The converged-source menu (`pq_matern_safe`) wins outright:** best final NRMSE on every `toymc_axial` output (axial offset 0.144 vs baseline 0.179), passes the gate everywhere (0.93–0.99), and takes 25 min per run vs 125. `sobol_gp_matern` is a better-calibrated baseline; the 50% seed (`seed50`) is worse. Report and validation recommendation: [ValidationRecommendation.md](ValidationRecommendation.md).
 
   Arms were: `pq+matern`, `pq+warp`, `matern+warp`, `pq+matern+warp`, `pq+matern+warp+pooled`, with 3 seeds, compared paired by seed.
+   - **OpenMC validation round 1 (2026-10-06): passed.** `safe` beat the baseline on all 12 seed × output pairs and passed the gate; round 2 (2026-10-06) made **`safe_pooled`** the leader; cutting active cycles hurts peaking. See [OpenMCValidation.md](OpenMCValidation.md).
 3. **Confirmation:** the best one or two combinations against the base, at **10 seeds** on the MCNP-like problems.
 
 All stages are scored by AUC-NRMSE, AUC-NCRPS and final coverage (gate ≥ 0.90), with NLL and max error as diagnostics.

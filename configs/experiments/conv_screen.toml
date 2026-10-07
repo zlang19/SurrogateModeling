@@ -1,0 +1,12 @@
+# Toy cross-check of OpenMC validation round 2's arms, paired by seed with calib_screen.
+name = "calib_screen"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 2
+problems = ["toymc_axial"]
+methods = [
+  "adaptive_iv_mf_cks_pq_matern_conv",
+  "adaptive_iv_mf_cks_pq_matern_conv_pooled",
+  "adaptive_iv_mf_cks_pq_matern_safe_pooled",
+]

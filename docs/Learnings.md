@@ -147,6 +147,19 @@ Baseline, #5b, #7 and #7s × `toymc_axial`, `toymc`, Borehole-30D × 10 seeds, 1
 - **A bigger high-fidelity seed design hurts** (50%: k-eff 0.101 vs 0.059). The budget is better spent on cheap runs.
 - Full report and validation ranking: [ValidationRecommendation.md](ValidationRecommendation.md).
 
+## OpenMC validation, round 1 (2026-10-06)
+
+- **The safe menu passes on the real code:** about half the baseline's final NRMSE on every output, 12/12 seeds, gate passed (0.91–0.97). See [OpenMCValidation.md](OpenMCValidation.md).
+- **The source-convergence bias is real in OpenMC.** The full menu spent its budget on `joint_low` (10 inactive cycles), learned a ~22× σ scale for it on axial offset, and failed the gate (0.82).
+- **But global outputs (k-eff, capture/fission) like the unconverged cheap runs.** The full menu beat `safe` by 10–20% on them. Whether a cheap run is safe depends on the output.
+- **Per-config σ scales are unstable on OpenMC** (stuck at the lower bound, or blowing up to 1,383×). Round 2 tests pooled scales and a menu that pins only inactive cycles.
+
+## OpenMC validation, round 2 (2026-10-06)
+
+- **`safe_pooled` is the leader on OpenMC and the toy:** the safe menu plus one σ scale per output. It improves `safe` on most outputs, passes the gate, and is 30% faster. The pooled scales are stable across seeds and match the fidelity study (axial offset σ × ~5.8, peaking × ~2.3).
+- **Keep active cycles at full fidelity too.** Peaking is a maximum over noisy bins, so short runs bias it upward. Cutting active cycles (`conv`) helped k-eff and capture/fission slightly, but ruined peaking (OpenMC 0.221 vs 0.148; toy 0.55–0.61 vs 0.24–0.26).
+- **k-eff and capture/fission scales hit the 0.2 lower bound** on every seed: the model treats the reported σ as too large for the global outputs. This is worth investigating (bound, prior, or a real over-report).
+
 ## Open questions
 
 1. **Axial offset under realistic fidelity.** Cost-aware methods still lose to high-fidelity-only sampling on axial offset, and are badly overconfident there. Is the fix better noise learning (a pooled scale per output), weighting the acquisition toward the weakest output, or just calibration? (The calibration follow-up in CostAwarePlan.md.)

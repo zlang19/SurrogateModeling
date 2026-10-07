@@ -48,11 +48,20 @@ Cutting inactive cycles leaves the fission source unconverged. That biases the s
 - **First to pass the gate:** it is the first cost-aware method to pass the coverage gate (≥ 0.90) on every output.
 - **Faster:** 25 min per run vs 125 for `pq_matern`. It reaches the budget with ~620 evaluations instead of ~1,600, so the GP fits are smaller.
 
+## OpenMC validation (round 1, 3 seeds)
+It passed: final NRMSE 0.138 / 0.078 / 0.166 / 0.120 (k-eff / axial offset / peaking / capture-fission), vs the baseline's 0.264 / 0.153 / 0.306 / 0.241. It won all 12 seed × output pairs and passed the gate (0.91–0.97). The full menu was 10–20% better on k-eff and capture/fission. See [OpenMCValidation.md](../OpenMCValidation.md).
+
+## Variants (OpenMC round 2)
+- `safe_menu="inactive"` (`_conv`): pin only inactive cycles, so active cycles can be cut. It keeps sources converged and adds cheaper configs (1,000 particles × (100 + 25), cost 0.071 on OpenMC).
+- `pooled_scale=True` (`_pooled`): one σ scale per output instead of per (output, config), because per-config scales were unstable on OpenMC.
+- Registry: `adaptive_iv_mf_cks_pq_matern_conv`, `_conv_pooled`, `_safe_pooled`.
+- **Result:** `safe_pooled` is the new leader on OpenMC and the toy (k-eff 0.111, axial offset 0.079, peaking 0.148, capture/fission 0.110, vs 0.138 / 0.078 / 0.166 / 0.120 for `safe`; 75 vs 109 min). `conv` ruins peaking, because peaking is a maximum over noisy bins and shorter runs bias it upward. See [OpenMCValidation.md](../OpenMCValidation.md#round-2-openmc_validation_r2-2026-10-06-fixing-the-two-gaps).
+
 ## Diagnostics
 The same as #7s and `pq`: `noise_scales`, `prequential_scale`, `lengthscales`, `fidelity_counts`, `fit_time`.
 
 ## Caveats
-- **Peaking may differ in OpenMC.** In the OpenMC fidelity study, 1,000 particles per cycle biased peaking upward. That setting is in the safe menu.
+- **Peaking in OpenMC (resolved).** The fidelity study found that 1,000 particles per cycle biases peaking upward, and the safe menu keeps that setting. In the validation, peaking was still `safe`'s best output relative to the baseline (0.166 vs 0.306).
 - **The menu is a modeling choice**, made using knowledge from the fidelity study. The method doesn't learn which knobs are safe.
 
 ## When to use
