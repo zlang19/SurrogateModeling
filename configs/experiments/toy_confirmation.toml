@@ -1,0 +1,12 @@
+# Confirmation on the OpenMC twin (2026-10-07): same arms as openmc_confirmation, 10 seeds.
+name = "toy_confirmation"
+budget = 100
+batch_size = 5
+seeds = 10
+workers = 3
+problems = ["toymc_axial"]
+methods = [
+  "adaptive_iv_mf_cks_pq_matern_safe_pooled",
+  "sobol_gp",
+  "sobol_gp_matern",
+]

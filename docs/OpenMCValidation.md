@@ -121,3 +121,43 @@ Mean AUC-NCRPS rank among the five cost-aware arms: `safe_pooled` 2.5, `conv` 2.
 - buying only particle-reduced configs, with inactive and active cycles at full fidelity.
 
 On OpenMC it roughly halves the baseline's error on every output (k-eff 0.111 vs 0.264, axial offset 0.079 vs 0.153, peaking 0.148 vs 0.306, capture/fission 0.110 vs 0.241). It passes the coverage gate, and runs in about the same wall-clock time as the baseline.
+
+## Confirmation (`openmc_confirmation` + `toy_confirmation`, 2026-10-07, 10 seeds): **confirmed**
+
+Plan stage 3 (backlog #1): `adaptive_iv_mf_cks_pq_matern_safe_pooled` vs `sobol_gp` and `sobol_gp_matern`, 10 seeds each, on OpenMC and on `toymc_axial`. All 60 runs finished; they took ~12 h. Seeds 0–2 on OpenMC came from the evaluation cache.
+
+**Verdict:** `safe_pooled` beats both baselines on **every seed, every output, and every criterion on OpenMC** (final NRMSE, final NCRPS, AUC-NCRPS: 10/10 each, sign test p = 0.002). It **passes the coverage gate on every seed and output** (worst per-seed coverage 0.90–0.96). On the toy it is the same, except toy peaking's final NRMSE and NCRPS, which win 9/10 (p = 0.02); peaking's AUC-NCRPS still wins 10/10.
+
+### OpenMC (10 seeds)
+
+| Output | | `safe_pooled` | `sobol_gp` | `sobol_gp_matern` |
+|---|---|---|---|---|
+| k-eff | final NRMSE, median [range] | **0.117** [0.088–0.157] | 0.284 [0.243–0.347] | 0.266 [0.230–0.316] |
+| | AUC-NRMSE / AUC-NCRPS | **0.441 / 0.208** | 0.586 / 0.295 | 0.588 / 0.294 |
+| | coverage median (worst seed); seeds ≥ 0.90 | 0.96 (0.90); **10/10** | 0.86 (0.78); 2/10 | 0.92 (0.84); 8/10 |
+| axial offset | final NRMSE | **0.067** [0.052–0.089] | 0.148 [0.085–0.168] | 0.108 [0.077–0.151] |
+| | AUC-NRMSE / AUC-NCRPS | **0.275 / 0.144** | 0.366 / 0.196 | 0.355 / 0.190 |
+| | coverage; seeds ≥ 0.90 | 0.96 (0.92); **10/10** | 0.89 (0.82); 4/10 | 0.95 (0.90); 10/10 |
+| axial peaking | final NRMSE | **0.151** [0.140–0.181] | 0.296 [0.240–0.330] | 0.273 [0.214–0.290] |
+| | AUC-NRMSE / AUC-NCRPS | **0.461 / 0.253** | 0.594 / 0.328 | 0.574 / 0.314 |
+| | coverage; seeds ≥ 0.90 | 0.97 (0.94); **10/10** | 0.88 (0.72); 3/10 | 0.92 (0.86); 9/10 |
+| capture/fission | final NRMSE | **0.107** [0.087–0.134] | 0.252 [0.229–0.294] | 0.248 [0.216–0.283] |
+| | AUC-NRMSE / AUC-NCRPS | **0.405 / 0.200** | 0.540 / 0.281 | 0.540 / 0.279 |
+| | coverage; seeds ≥ 0.90 | 0.95 (0.90); **10/10** | 0.86 (0.81); 2/10 | 0.91 (0.87); 8/10 |
+
+Median per-seed final NRMSE ratio, `safe_pooled` ÷ baseline: **0.41–0.51 vs `sobol_gp`** and 0.43–0.60 vs `sobol_gp_matern`. That is about half the error at the same simulation budget. Median run time: 109 min vs 86 for `sobol_gp`; both are dominated by OpenMC.
+
+### `toymc_axial` (10 seeds)
+
+| Output | `safe_pooled` final NRMSE | `sobol_gp` | `sobol_gp_matern` | Wins vs each baseline (final / AUC-NCRPS) | `safe_pooled` coverage; seeds ≥ 0.90 |
+|---|---|---|---|---|---|
+| k-eff | **0.048** | 0.139 | 0.139 | 10/10 / 10/10 | 0.97; 10/10 |
+| axial offset | **0.125** | 0.216 | 0.207 | 10/10 / 10/10 | 0.96; 10/10 |
+| axial peaking | **0.274** | 0.389 | 0.374 | 9/10 / 10/10 | 0.97; 10/10 |
+| capture/fission | **0.052** | 0.163 | 0.160 | 10/10 / 10/10 | 0.97; 10/10 |
+
+### What it settles
+1. **The success bar is met with statistical weight.** `safe_pooled` beats the reference baseline on AUC-NRMSE and AUC-NCRPS for every output on both MCNP-like problems, on all 10 seeds. It also passes the coverage gate on all 10 seeds for every output, while `sobol_gp` passes on only 1–4 of 10 seeds per output.
+2. **It also beats the better-calibrated `sobol_gp_matern`** everywhere. The gain is from the design and the multi-fidelity model, not only from the Matérn kernel.
+3. **The OpenMC advantage is larger than the toy's on the axial outputs** (axial offset ratio 0.50 vs 0.59), so the toy was, if anything, conservative.
+4. **Low variance:** `safe_pooled`'s worst OpenMC seed (k-eff 0.157) is still better than the baseline's best (0.243) on k-eff, peaking and capture/fission. Axial offset is the exception (0.089 vs `sobol_gp`'s best seed 0.085).

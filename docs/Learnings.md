@@ -160,6 +160,20 @@ Baseline, #5b, #7 and #7s × `toymc_axial`, `toymc`, Borehole-30D × 10 seeds, 1
 - **Keep active cycles at full fidelity too.** Peaking is a maximum over noisy bins, so short runs bias it upward. Cutting active cycles (`conv`) helped k-eff and capture/fission slightly, but ruined peaking (OpenMC 0.221 vs 0.148; toy 0.55–0.61 vs 0.24–0.26).
 - **k-eff and capture/fission scales hit the 0.2 lower bound** on every seed: the model treats the reported σ as too large for the global outputs. This is worth investigating (bound, prior, or a real over-report).
 
+## Neural surrogates: deep ensembles (2026-10-06)
+
+- **At our data sizes, GPs beat neural networks.** On identical points (100 full-fidelity, or ~620 safe-menu runs, in 14–30 dimensions), a tuned 5-member deep ensemble is 10–110% worse in final NRMSE, and 20–120% worse in OpenMC AUC-NCRPS. See [deep_ensembles.md](methods/deep_ensembles.md).
+- **The safe-menu design helps any surrogate:** the network trained on it still beats the full-fidelity GP baseline on every OpenMC output.
+- **Calibrating on mixed-fidelity residuals is a trap.** Noisy cheap runs dominate the residuals, the noise term covers them, and the latent uncertainty is shrunk to nothing. Calibrate against full-fidelity residuals only.
+
+## Noise-scale floor (2026-10-06)
+
+- **The σ-scale floor is a regularizer, not a hidden error.** Lowered to 0.01, the pooled scale runs straight to it on the outputs where reported σ is accurate (the GP absorbs noise as signal). Neither a lower floor nor a prior centered at 1 improved accuracy, and the prior cost coverage on Borehole (0.82). Keep 0.2.
+
+## Confirmation at 10 seeds (2026-10-07)
+
+- **Confirmed:** `safe_pooled` beats `sobol_gp` and `sobol_gp_matern` on every OpenMC seed, output and criterion (10/10, sign test p = 0.002). It gets about half the baseline's error at the same simulation budget, and passes the coverage gate on all 10 seeds for every output (the baseline: 1–4 of 10). The toy agrees (peaking final 9/10).
+
 ## Open questions
 
 1. **Axial offset under realistic fidelity.** Cost-aware methods still lose to high-fidelity-only sampling on axial offset, and are badly overconfident there. Is the fix better noise learning (a pooled scale per output), weighting the acquisition toward the weakest output, or just calibration? (The calibration follow-up in CostAwarePlan.md.)

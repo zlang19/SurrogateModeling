@@ -1,0 +1,16 @@
+# Noise-scale floor screen (backlog #1, 2026-10-06). On OpenMC, safe_pooled's k-eff and capture/
+# fission sigma scales sat at the 0.2 floor on every seed, although the fidelity study measured
+# real/reported spread ~1.0-1.15 for them. Is the reported sigma really too large, or is the GP
+# soaking up noise as signal? Arms: floor 0.05; floor 0.01 (effectively free); floor 0.01 plus a
+# log-normal prior with median 1 (log-sd 1). Paired by seed with safe_pooled in calib_screen.
+name = "calib_screen"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 4
+problems = ["toymc_axial", "borehole_d30"]
+methods = [
+  "adaptive_iv_mf_cks_pq_matern_safe_pooled_floor05",
+  "adaptive_iv_mf_cks_pq_matern_safe_pooled_floor001",
+  "adaptive_iv_mf_cks_pq_matern_safe_pooled_prior",
+]

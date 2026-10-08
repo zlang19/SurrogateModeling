@@ -1,0 +1,10 @@
+# Neural surrogates on OpenMC (2026-10-06). Both arms reuse cached simulations: sobol_de shares
+# sobol_gp's design and noise seeds; adaptive_iv_mf_de_safe selects points with safe_pooled's GP,
+# so it repeats safe_pooled's design (only the surrogate differs). Pair with openmc_validation(_r2).
+name = "openmc_validation_nn"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 2
+problems = ["openmc"]
+methods = ["sobol_de", "adaptive_iv_mf_de_safe"]

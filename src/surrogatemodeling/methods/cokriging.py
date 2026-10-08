@@ -73,12 +73,16 @@ class ConfigScaledNoise(Noise):
     hyperparameters (state dicts) don't depend on the number of points.
     """
 
-    def __init__(self, noise: torch.Tensor, n_configs: int, pooled: bool = False):
+    def __init__(self, noise: torch.Tensor, n_configs: int, pooled: bool = False, floor: float = 0.2,
+                 prior_sd: float | None = None):
         super().__init__()
         self.fixed, self.n_configs = noise, n_configs
         # pooled: one scale shared by all configs (under-reporting is a property of the output)
         self.register_parameter("raw_scale", torch.nn.Parameter(torch.zeros(1 if pooled else n_configs)))
-        self.register_constraint("raw_scale", GreaterThan(0.2))  # allow modest over-reporting
+        self.register_constraint("raw_scale", GreaterThan(floor))  # floor: how much over-reporting to allow
+        if prior_sd is not None:  # log-normal prior with median 1: reported sigma is right unless the data say otherwise
+            self.register_prior("scale_prior", LogNormalPrior(0.0, prior_sd),
+                                lambda m: m.raw_scale_constraint.transform(m.raw_scale))
 
     @property
     def scale(self) -> torch.Tensor:
@@ -101,17 +105,19 @@ class CoKrigingGPs(IndependentGPs):
     def __init__(self, n_configs: int, hf: int, extra_noise: bool = True, refit_growth: float = 1.2,
                  calibrate: bool = False, noise_scale: bool = False, pooled_scale: bool = False,
                  kernel: str = "rbf", warp: bool = False, log_outputs: bool = False, jitter_seed: int | None = None,
-                 warm_start: bool = True):
+                 warm_start: bool = True, scale_floor: float = 0.2, scale_prior_sd: float | None = None):
         super().__init__(extra_noise=extra_noise and not noise_scale, refit_growth=refit_growth, calibrate=calibrate,
                          log_outputs=log_outputs, jitter_seed=jitter_seed, warm_start=warm_start)
         self.n_configs, self.hf, self.noise_scale = n_configs, hf, noise_scale
         self.pooled_scale, self.kernel, self.warp = pooled_scale, kernel, warp
+        self.scale_floor, self.scale_prior_sd = scale_floor, scale_prior_sd
         self.warp_dims: list[int] | None = None  # warp only these input columns; None = all
 
     def _make_model(self, X, y, v):
         if not self.noise_scale:
             return super()._make_model(X, y, v)
-        lik = _GaussianLikelihoodBase(noise_covar=ConfigScaledNoise(v, self.n_configs, pooled=self.pooled_scale))
+        lik = _GaussianLikelihoodBase(noise_covar=ConfigScaledNoise(v, self.n_configs, pooled=self.pooled_scale,
+                                                                      floor=self.scale_floor, prior_sd=self.scale_prior_sd))
         D = X.shape[-1]
         return SingleTaskGP(X, y, likelihood=lik, covar_module=self._covar_module(D), outcome_transform=None,
                             input_transform=self._input_transform(D))
@@ -163,6 +169,8 @@ class CoKrigingAdaptive(AdaptiveGP):
                   values): converged sources, little bias, near-proportional cost. "inactive": pin only
                   the inactive cycles, so active cycles can be cut too (still converged sources)
     seed_fraction share of the budget spent on the HF Sobol seed (default 0.25)
+    scale_floor   lower bound on the learned sigma scales (default 0.2)
+    scale_prior_sd if set, a log-normal prior (median 1, this log-sd) on the sigma scales
     prequential   scale predictive sd so recent *out-of-sample* residuals (each batch predicted before
                   training on it) cover 95%
     weighted      weight each output's variance reduction by its estimated error (from those residuals)
@@ -171,9 +179,11 @@ class CoKrigingAdaptive(AdaptiveGP):
     def __init__(self, calibrate: bool = False, noise_scale: bool = False, pooled_scale: bool = False,
                  kernel: str = "rbf", warp: bool = False, log_outputs: bool = False, ensemble: int = 1,
                  prequential: bool = False, weighted: bool = False, warp_after: int | None = None,
-                 warp_top_k: int = 8, safe_menu: bool | str = False, seed_fraction: float = 0.25):
+                 warp_top_k: int = 8, safe_menu: bool | str = False, seed_fraction: float = 0.25,
+                 scale_floor: float = 0.2, scale_prior_sd: float | None = None):
         super().__init__(score="iv", cost_aware=True, extra_noise=not noise_scale, seed_fraction=seed_fraction)
         self.safe_menu = safe_menu
+        self.scale_floor, self.scale_prior_sd = scale_floor, scale_prior_sd
         self.warp_after, self.warp_top_k = warp_after, warp_top_k
         self.calibrate, self.noise_scale, self.pooled_scale = calibrate, noise_scale, pooled_scale
         self.kernel, self.warp, self.log_outputs = kernel, warp, log_outputs
@@ -189,6 +199,7 @@ class CoKrigingAdaptive(AdaptiveGP):
             # Full warping from the 25-point seed gets trapped when warm-started (Borehole-30D:
             # NRMSE 0.36 vs 0.05 cold); delayed warping and unwarped models are safe and 1.6-2.8x faster.
             warm_start=not (self.warp and self.warp_after is None),
+            scale_floor=self.scale_floor, scale_prior_sd=self.scale_prior_sd,
         )
         if self.safe_menu:
             pinned = ("inactive",) if self.safe_menu == "inactive" else ("inactive", "active")

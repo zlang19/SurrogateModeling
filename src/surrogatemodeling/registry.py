@@ -8,6 +8,7 @@ from surrogatemodeling.core.protocols import Method, Problem
 from surrogatemodeling.methods.adaptive import AdaptiveGP, ScreenedGP
 from surrogatemodeling.methods.cokriging import CoKrigingAdaptive
 from surrogatemodeling.methods.gp_fixed import SobolGP
+from surrogatemodeling.methods.neural import CostAwareDeepEnsemble, SobolDeepEnsemble
 from surrogatemodeling.methods.pce import SobolPCE
 from surrogatemodeling.methods.saas import SobolSAAS
 from surrogatemodeling.methods.saas_mf import SaasCostAware
@@ -76,7 +77,15 @@ METHODS: dict[str, Callable[[], Method]] = {
     "adaptive_iv_mf_cks_pq_matern_safe_pooled": lambda: CoKrigingAdaptive(noise_scale=True, prequential=True, kernel="matern", safe_menu=True, pooled_scale=True),
     "adaptive_iv_mf_cks_pq_matern_conv": lambda: CoKrigingAdaptive(noise_scale=True, prequential=True, kernel="matern", safe_menu="inactive"),
     "adaptive_iv_mf_cks_pq_matern_conv_pooled": lambda: CoKrigingAdaptive(noise_scale=True, prequential=True, kernel="matern", safe_menu="inactive", pooled_scale=True),
+    # Noise-scale floor (2026-10-06): k-eff / capture scales sat at the 0.2 floor on every OpenMC seed,
+    # although the fidelity study measured real/reported spread ~1.0-1.15 for them.
+    "adaptive_iv_mf_cks_pq_matern_safe_pooled_floor05": lambda: CoKrigingAdaptive(noise_scale=True, prequential=True, kernel="matern", safe_menu=True, pooled_scale=True, scale_floor=0.05),
+    "adaptive_iv_mf_cks_pq_matern_safe_pooled_floor001": lambda: CoKrigingAdaptive(noise_scale=True, prequential=True, kernel="matern", safe_menu=True, pooled_scale=True, scale_floor=0.01),
+    "adaptive_iv_mf_cks_pq_matern_safe_pooled_prior": lambda: CoKrigingAdaptive(noise_scale=True, prequential=True, kernel="matern", safe_menu=True, pooled_scale=True, scale_floor=0.01, scale_prior_sd=1.0),
     "adaptive_iv_mf_cks_pq_matern_seed50": lambda: CoKrigingAdaptive(noise_scale=True, prequential=True, kernel="matern", seed_fraction=0.5),
+    # Neural surrogates (2026-10-06): deep ensemble on the baseline's design, and on the leader's.
+    "sobol_de": SobolDeepEnsemble,
+    "adaptive_iv_mf_de_safe": CostAwareDeepEnsemble,
     # #8: pq_matern's cost-aware sampling, SAAS surrogate (subsample NUTS, fidelity knobs as inputs).
     "adaptive_iv_mf_saas": SaasCostAware,
     # #8 without knob inputs: all fidelities one function, noise corrected by learned config scales.

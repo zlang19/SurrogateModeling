@@ -16,7 +16,7 @@ Validate **`adaptive_iv_mf_cks_pq_matern_safe`** against the high-fidelity basel
 
 With 12 cores, each candidate-plus-baseline seed pair is ~20 CPU-h, about 2 h of wall-clock time. **3 seeds take ~6 h; 5 seeds take ~10 h** (about the one-day cap). The ablation adds ~1 h per seed. The 100-point reference test set is already built and cached.
 
-**Status: rounds 1 and 2 complete. Round 1 passed; round 2's `safe_pooled` is the new leader** — see [OpenMCValidation.md](OpenMCValidation.md). It ran as experiment `openmc_validation` (3 seeds, all five arms, queued in the order above; config `configs/experiments/openmc_validation.toml`). Two runs at a time, each evaluating 5 OpenMC points in parallel (~10 of 12 cores). Expected total: ~10–12 h.
+**Status: validation complete. Round 1 passed; round 2's `safe_pooled` became the leader and was confirmed at 10 seeds** — see [OpenMCValidation.md](OpenMCValidation.md). It ran as experiment `openmc_validation` (3 seeds, all five arms, queued in the order above; config `configs/experiments/openmc_validation.toml`). Two runs at a time, each evaluating 5 OpenMC points in parallel (~10 of 12 cores). Expected total: ~10–12 h.
 
 ## Headline finding: keep cycles at high fidelity, cut only particles
 

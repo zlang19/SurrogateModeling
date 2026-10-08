@@ -57,6 +57,22 @@ It passed: final NRMSE 0.138 / 0.078 / 0.166 / 0.120 (k-eff / axial offset / pea
 - Registry: `adaptive_iv_mf_cks_pq_matern_conv`, `_conv_pooled`, `_safe_pooled`.
 - **Result:** `safe_pooled` is the new leader on OpenMC and the toy (k-eff 0.111, axial offset 0.079, peaking 0.148, capture/fission 0.110, vs 0.138 / 0.078 / 0.166 / 0.120 for `safe`; 75 vs 109 min). `conv` ruins peaking, because peaking is a maximum over noisy bins and shorter runs bias it upward. See [OpenMCValidation.md](../OpenMCValidation.md#round-2-openmc_validation_r2-2026-10-06-fixing-the-two-gaps).
 
+## Noise-scale floor (screen, 2026-10-06, 3 seeds, `toymc_axial` + Borehole-30D)
+On OpenMC, `safe_pooled`'s k-eff and capture/fission σ scales sat at the 0.2 floor on every seed. Three arms test whether that floor was hiding something: `_floor05`, `_floor001` (effectively free), and `_prior` (floor 0.01 + log-normal prior, median 1).
+
+| `toymc_axial` final NRMSE, seeds 0/1/2 | `safe_pooled` | `_floor05` | `_floor001` | `_prior` |
+|---|---|---|---|---|
+| k-eff | 0.045 / 0.050 / 0.047 | 0.049 / 0.049 / 0.046 | 0.046 / 0.047 / 0.051 | 0.045 / 0.047 / 0.049 |
+| axial offset | **0.125 / 0.132 / 0.119** | 0.150 / 0.137 / 0.131 | 0.142 / 0.140 / 0.148 | 0.143 / 0.143 / 0.132 |
+| axial peaking | 0.243 / 0.256 / 0.263 | 0.245 / 0.295 / 0.260 | 0.306 / 0.243 / 0.256 | 0.247 / 0.241 / 0.275 |
+| capture/fission | 0.049 / 0.054 / 0.054 | 0.051 / 0.050 / 0.051 | 0.052 / 0.051 / 0.053 | 0.049 / 0.049 / 0.054 |
+| Borehole-30D (worst-seed coverage) | 0.041 / 0.052 / 0.042 (0.94) | 0.048 / 0.050 / 0.050 (0.89) | 0.045 / 0.045 / 0.050 (0.89) | 0.051 / 0.045 / 0.067 (**0.82**) |
+
+**Result: keep the 0.2 floor.**
+- **Accuracy:** no arm improves any output. All are slightly worse on axial offset (3/3 seeds each). The changed scales on the other outputs change which points are picked, because point selection is joint across outputs.
+- **The scale isn't identified from below:** with a floor of 0.01, the fit runs straight to it (seed 0: toy peaking and capture/fission at 0.01, Borehole flow at 0.01). The GP is absorbing noise as signal; the reported σ isn't really too large. The 0.2 floor is acting as a useful regularizer.
+- **Calibration:** the prior keeps the scales near 1 (0.37–1.0) but costs coverage on Borehole (0.82).
+
 ## Diagnostics
 The same as #7s and `pq`: `noise_scales`, `prequential_scale`, `lengthscales`, `fidelity_counts`, `fit_time`.
 

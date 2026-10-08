@@ -1,0 +1,14 @@
+# Neural surrogates screen (2026-10-06): deep ensembles on the baseline's HF Sobol design
+# (vs sobol_gp / sobol_gp_matern / sobol_saas) and on the leader's cost-aware design (vs
+# safe_pooled). Written into calib_screen to pair by seed; safe_pooled on Borehole-30D is new.
+name = "calib_screen"
+budget = 100
+batch_size = 5
+seeds = 3
+workers = 6
+problems = ["toymc_axial", "borehole_d30"]
+methods = [
+  "sobol_de",
+  "adaptive_iv_mf_de_safe",
+  "adaptive_iv_mf_cks_pq_matern_safe_pooled",
+]

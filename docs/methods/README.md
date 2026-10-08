@@ -32,6 +32,7 @@ The runner asks for batches of 5 and stops when the budget (in high-fidelity run
 | 7s-pm | `adaptive_iv_mf_cks_pq_matern` | Sobol seed → adaptive | #7s + prequential calibration + Matérn | Chooses from menu | [adaptive_iv_mf_cks_pq_matern.md](adaptive_iv_mf_cks_pq_matern.md) |
 | 7s-safe | `adaptive_iv_mf_cks_pq_matern_safe` | Sobol seed → adaptive | `pq_matern` on a converged-source menu (only particles vary) | Chooses from menu (HF cycles only) | [adaptive_iv_mf_cks_pq_matern_safe.md](adaptive_iv_mf_cks_pq_matern_safe.md) |
 | 7s-conv | `adaptive_iv_mf_cks_pq_matern_{conv,conv_pooled,safe_pooled}` | Sobol seed → adaptive | `safe` with only inactive cycles pinned (`conv`) and/or one σ scale per output (`pooled`): OpenMC round 2 | Chooses from menu | [adaptive_iv_mf_cks_pq_matern_safe.md](adaptive_iv_mf_cks_pq_matern_safe.md#variants-openmc-round-2) |
+| DE | `sobol_de`, `adaptive_iv_mf_de_safe` | Fixed Sobol / the leader's design | Deep ensemble of 5 MLPs, learned noise scale, prequential calibration | High only / safe menu | [deep_ensembles.md](deep_ensembles.md) |
 | 7s-x | `adaptive_iv_mf_cks_{pq,matern,pooled,log,wt,ens,warp}` | Sobol seed → adaptive | #7s with one calibration change each (screening) | Chooses from menu | [cks_variants.md](cks_variants.md) |
 
 The registry order in [registry.py](../../src/surrogatemodeling/registry.py) also fixes each method's color in plots and the dashboard.

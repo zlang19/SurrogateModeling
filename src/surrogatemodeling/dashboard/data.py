@@ -12,6 +12,7 @@ import os
 import subprocess
 import time
 import warnings
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -51,9 +52,10 @@ def method_order(methods) -> list[str]:
 
 
 def method_index(method: str) -> int:
-    """Fixed palette slot: registry position, so colors never depend on what is shown."""
+    """Fixed palette slot: registry position, so colors never depend on what is shown. Methods the
+    running server doesn't know (registered after it started) get a stable hashed slot, not grey."""
     names = list(METHODS)
-    return names.index(method) if method in names else -1
+    return names.index(method) if method in names else len(names) + zlib.crc32(method.encode()) % 8
 
 
 def jsonable(obj):

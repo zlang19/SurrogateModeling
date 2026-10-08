@@ -162,7 +162,7 @@ For winners {pq, matern, warp}: screening already covers 4 of the 2³ = 8 arms (
 
   Arms were: `pq+matern`, `pq+warp`, `matern+warp`, `pq+matern+warp`, `pq+matern+warp+pooled`, with 3 seeds, compared paired by seed.
    - **OpenMC validation round 1 (2026-10-06): passed.** `safe` beat the baseline on all 12 seed × output pairs and passed the gate; round 2 (2026-10-06) made **`safe_pooled`** the leader; cutting active cycles hurts peaking. See [OpenMCValidation.md](OpenMCValidation.md).
-3. **Confirmation:** the best one or two combinations against the base, at **10 seeds** on the MCNP-like problems.
+3. ✅ **Confirmation (2026-10-07):** `safe_pooled` beat both baselines on every seed, output and criterion at 10 seeds on OpenMC and passed the gate on every seed ([OpenMCValidation.md](OpenMCValidation.md#confirmation-openmc_confirmation--toy_confirmation-2026-10-07-10-seeds-confirmed)). Originally planned as: the best one or two combinations against the base, at **10 seeds** on the MCNP-like problems.
 
 All stages are scored by AUC-NRMSE, AUC-NCRPS and final coverage (gate ≥ 0.90), with NLL and max error as diagnostics.
 
